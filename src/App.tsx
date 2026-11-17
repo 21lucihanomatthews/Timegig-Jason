@@ -6015,7 +6015,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     playClickSound();
-                    setActiveTab('referrals');
+                    setActiveTab((prev) => (prev === 'referrals' ? 'gigs' : 'referrals'));
                   }}
                   className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'referrals' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
                 >
@@ -6026,7 +6026,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     playClickSound();
-                    setActiveTab('profile');
+                    setActiveTab((prev) => (prev === 'profile' ? 'gigs' : 'profile'));
                   }}
                   className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'profile' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
                 >
@@ -6056,7 +6056,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     playClickSound();
-                    setActiveTab('seekers');
+                    setActiveTab((prev) => (prev === 'seekers' ? 'gigs' : 'seekers'));
                   }}
                   className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'seekers' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
                 >
@@ -6067,7 +6067,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     playClickSound();
-                    setActiveTab('settings');
+                    setActiveTab((prev) => (prev === 'settings' ? 'gigs' : 'settings'));
                   }}
                   className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'settings' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
                 >
@@ -6081,7 +6081,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     playClickSound();
-                    setActiveTab('tenant');
+                    setActiveTab((prev) => (prev === 'tenant' ? 'gigs' : 'tenant'));
                   }}
                   className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'tenant' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
                 >
@@ -6092,7 +6092,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     playClickSound();
-                    setActiveTab('referrals');
+                    setActiveTab((prev) => (prev === 'referrals' ? 'gigs' : 'referrals'));
                   }}
                   className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'referrals' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
                 >
@@ -6122,7 +6122,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     playClickSound();
-                    setActiveTab('seekers');
+                    setActiveTab((prev) => (prev === 'seekers' ? 'gigs' : 'seekers'));
                   }}
                   className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'seekers' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
                 >
@@ -6134,7 +6134,7 @@ export default function App() {
                   <button
                     onClick={() => {
                       playClickSound();
-                      setActiveTab('profile');
+                      setActiveTab((prev) => (prev === 'profile' ? 'gigs' : 'profile'));
                     }}
                     className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'profile' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
                   >
@@ -6145,7 +6145,7 @@ export default function App() {
                   <button
                     onClick={() => {
                       playClickSound();
-                      setActiveTab('settings');
+                      setActiveTab((prev) => (prev === 'settings' ? 'gigs' : 'settings'));
                     }}
                     className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'settings' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
                   >
