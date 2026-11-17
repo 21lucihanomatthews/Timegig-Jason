@@ -1,0 +1,6 @@
+{
+  "name": "OpenStreetMap Location Viewer",
+  "description": "Interactive OpenStreetMap template showing real-time user GPS location with zero API costs.",
+  "requestFramePermissions": ["geolocation", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
