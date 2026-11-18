@@ -50,6 +50,10 @@
         "bankAccountNumber": { "type": "string", "description": "Tenant bank account number" },
         "bankBranchCode": { "type": "string", "description": "Tenant bank branch or universal code" },
         "bankReferenceNote": { "type": "string", "description": "Payment reference instructions for EFT transfers" },
+        "approvalHoursEnabled": { "type": "boolean", "description": "Whether approving submitted submissions is restricted to tenant working hours" },
+        "approvalHoursStart": { "type": "string", "description": "Working hours start time in 24h HH:MM format" },
+        "approvalHoursEnd": { "type": "string", "description": "Working hours end time in 24h HH:MM format" },
+        "approvalWorkingDays": { "type": "string", "description": "Comma-separated weekday indices (0=Sun..6=Sat) when tenant approves submissions" },
         "updatedAt": { "type": "number", "description": "Last update epoch timestamp" }
       },
       "required": ["code", "ownerUid", "ownerTier", "updatedAt"]

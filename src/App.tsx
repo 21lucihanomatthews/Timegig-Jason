@@ -174,6 +174,10 @@ interface TenantOfferConfig {
   bankAccountNumber: string;
   bankBranchCode: string;
   bankReferenceNote: string;
+  approvalHoursEnabled: boolean;
+  approvalHoursStart: string;
+  approvalHoursEnd: string;
+  approvalWorkingDays: string;
 }
 
 const DEFAULT_TENANT_CONFIG: TenantOfferConfig = {
@@ -193,6 +197,10 @@ const DEFAULT_TENANT_CONFIG: TenantOfferConfig = {
   bankAccountNumber: '',
   bankBranchCode: '',
   bankReferenceNote: '',
+  approvalHoursEnabled: false,
+  approvalHoursStart: '08:00',
+  approvalHoursEnd: '17:00',
+  approvalWorkingDays: '1,2,3,4,5',
 };
 
 const EXPIRY_WARNING_MS = 5 * 24 * 60 * 60 * 1000; // 5 days before subscription ends
@@ -580,12 +588,13 @@ export default function App() {
   const [onboardingModalOpen, setOnboardingModalOpen] = useState<boolean>(false);
   const [selectedSubTier, setSelectedSubTier] = useState<SubTierOption | null>(null);
   const [chosenSubscription, setChosenSubscription] = useState<'tenant' | 'user' | 'company' | null>(null);
+  const [dismissedTenantReminder, setDismissedTenantReminder] = useState<boolean>(false);
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [activeTab, setActiveTab] = useState<ActiveTab>(null);
   const [tenantMenuOpen, setTenantMenuOpen] = useState<boolean>(false);
-  const [tenantMenuSection, setTenantMenuSection] = useState<'fees' | 'trials' | 'limits' | 'bank'>('fees');
+  const [tenantMenuSection, setTenantMenuSection] = useState<'fees' | 'trials' | 'limits' | 'bank' | 'hours'>('fees');
   const [myTenantConfig, setMyTenantConfig] = useState<TenantOfferConfig>(DEFAULT_TENANT_CONFIG);
   const [offerConfig, setOfferConfig] = useState<TenantOfferConfig>(DEFAULT_TENANT_CONFIG);
   const [draftTenantFee, setDraftTenantFee] = useState<string>('299.99');
@@ -601,6 +610,10 @@ export default function App() {
   const [draftBankAccountNumber, setDraftBankAccountNumber] = useState<string>('');
   const [draftBankBranchCode, setDraftBankBranchCode] = useState<string>('');
   const [draftBankReferenceNote, setDraftBankReferenceNote] = useState<string>('');
+  const [draftApprovalHoursEnabled, setDraftApprovalHoursEnabled] = useState<boolean>(false);
+  const [draftApprovalHoursStart, setDraftApprovalHoursStart] = useState<string>('08:00');
+  const [draftApprovalHoursEnd, setDraftApprovalHoursEnd] = useState<string>('17:00');
+  const [draftApprovalWorkingDays, setDraftApprovalWorkingDays] = useState<string>('1,2,3,4,5');
   const [copiedBankAcct, setCopiedBankAcct] = useState<boolean>(false);
   const [isSavingTenantConfig, setIsSavingTenantConfig] = useState<boolean>(false);
   const [tenantConfigSavedMsg, setTenantConfigSavedMsg] = useState<string | null>(null);
@@ -1285,6 +1298,10 @@ export default function App() {
                 bankAccountNumber: typeof d.bankAccountNumber === 'string' ? d.bankAccountNumber : '',
                 bankBranchCode: typeof d.bankBranchCode === 'string' ? d.bankBranchCode : '',
                 bankReferenceNote: typeof d.bankReferenceNote === 'string' ? d.bankReferenceNote : '',
+                approvalHoursEnabled: typeof d.approvalHoursEnabled === 'boolean' ? d.approvalHoursEnabled : false,
+                approvalHoursStart: typeof d.approvalHoursStart === 'string' ? d.approvalHoursStart : '08:00',
+                approvalHoursEnd: typeof d.approvalHoursEnd === 'string' ? d.approvalHoursEnd : '17:00',
+                approvalWorkingDays: typeof d.approvalWorkingDays === 'string' ? d.approvalWorkingDays : '1,2,3,4,5',
               });
             } else {
               setOfferConfig(DEFAULT_TENANT_CONFIG);
@@ -1319,6 +1336,10 @@ export default function App() {
                 bankAccountNumber: typeof md.bankAccountNumber === 'string' ? md.bankAccountNumber : '',
                 bankBranchCode: typeof md.bankBranchCode === 'string' ? md.bankBranchCode : '',
                 bankReferenceNote: typeof md.bankReferenceNote === 'string' ? md.bankReferenceNote : '',
+                approvalHoursEnabled: typeof md.approvalHoursEnabled === 'boolean' ? md.approvalHoursEnabled : false,
+                approvalHoursStart: typeof md.approvalHoursStart === 'string' ? md.approvalHoursStart : '08:00',
+                approvalHoursEnd: typeof md.approvalHoursEnd === 'string' ? md.approvalHoursEnd : '17:00',
+                approvalWorkingDays: typeof md.approvalWorkingDays === 'string' ? md.approvalWorkingDays : '1,2,3,4,5',
               };
               setMyTenantConfig(loadedCfg);
               setDraftTenantFee(String(loadedCfg.tenantFee));
@@ -1334,6 +1355,10 @@ export default function App() {
               setDraftBankAccountNumber(loadedCfg.bankAccountNumber);
               setDraftBankBranchCode(loadedCfg.bankBranchCode);
               setDraftBankReferenceNote(loadedCfg.bankReferenceNote);
+              setDraftApprovalHoursEnabled(loadedCfg.approvalHoursEnabled);
+              setDraftApprovalHoursStart(loadedCfg.approvalHoursStart);
+              setDraftApprovalHoursEnd(loadedCfg.approvalHoursEnd);
+              setDraftApprovalWorkingDays(loadedCfg.approvalWorkingDays);
             }
           } catch {
             // keep defaults
@@ -1496,6 +1521,10 @@ export default function App() {
         setDraftBankAccountNumber('');
         setDraftBankBranchCode('');
         setDraftBankReferenceNote('');
+        setDraftApprovalHoursEnabled(false);
+        setDraftApprovalHoursStart('08:00');
+        setDraftApprovalHoursEnd('17:00');
+        setDraftApprovalWorkingDays('1,2,3,4,5');
         setTenantMenuOpen(false);
         setTenantMenuSection('fees');
       }
@@ -1991,6 +2020,10 @@ export default function App() {
             bankAccountNumber: typeof md.bankAccountNumber === 'string' ? md.bankAccountNumber : '',
             bankBranchCode: typeof md.bankBranchCode === 'string' ? md.bankBranchCode : '',
             bankReferenceNote: typeof md.bankReferenceNote === 'string' ? md.bankReferenceNote : '',
+            approvalHoursEnabled: typeof md.approvalHoursEnabled === 'boolean' ? md.approvalHoursEnabled : false,
+            approvalHoursStart: typeof md.approvalHoursStart === 'string' ? md.approvalHoursStart : '08:00',
+            approvalHoursEnd: typeof md.approvalHoursEnd === 'string' ? md.approvalHoursEnd : '17:00',
+            approvalWorkingDays: typeof md.approvalWorkingDays === 'string' ? md.approvalWorkingDays : '1,2,3,4,5',
           };
           setMyTenantConfig(loadedCfg);
           setDraftTenantFee(String(loadedCfg.tenantFee));
@@ -2006,6 +2039,10 @@ export default function App() {
           setDraftBankAccountNumber(loadedCfg.bankAccountNumber);
           setDraftBankBranchCode(loadedCfg.bankBranchCode);
           setDraftBankReferenceNote(loadedCfg.bankReferenceNote);
+          setDraftApprovalHoursEnabled(loadedCfg.approvalHoursEnabled);
+          setDraftApprovalHoursStart(loadedCfg.approvalHoursStart);
+          setDraftApprovalHoursEnd(loadedCfg.approvalHoursEnd);
+          setDraftApprovalWorkingDays(loadedCfg.approvalWorkingDays);
         }
       },
       () => {}
@@ -2363,6 +2400,10 @@ export default function App() {
             bankAccountNumber: typeof d.bankAccountNumber === 'string' ? d.bankAccountNumber : '',
             bankBranchCode: typeof d.bankBranchCode === 'string' ? d.bankBranchCode : '',
             bankReferenceNote: typeof d.bankReferenceNote === 'string' ? d.bankReferenceNote : '',
+            approvalHoursEnabled: typeof d.approvalHoursEnabled === 'boolean' ? d.approvalHoursEnabled : false,
+            approvalHoursStart: typeof d.approvalHoursStart === 'string' ? d.approvalHoursStart : '08:00',
+            approvalHoursEnd: typeof d.approvalHoursEnd === 'string' ? d.approvalHoursEnd : '17:00',
+            approvalWorkingDays: typeof d.approvalWorkingDays === 'string' ? d.approvalWorkingDays : '1,2,3,4,5',
           });
         }
       })
@@ -3188,6 +3229,9 @@ export default function App() {
       setAuthModalOpen(false);
       setPassword('');
       setActiveTab(isMain ? 'tenant' : 'gigs');
+      if (!isMain) {
+        setAppNotice('Notice: Tenant spots are running out quickly! Upgrade to Tenant Sub now to claim your spot and earn monthly referral income.');
+      }
     } catch (signInErr: any) {
       if (
         signInErr?.code === 'auth/user-not-found' ||
@@ -3204,6 +3248,10 @@ export default function App() {
           setAuthModalOpen(false);
           setPassword('');
           setActiveTab(isMain ? 'tenant' : 'gigs');
+          if (!isMain) {
+            setUpgradeModalOpen(true);
+            setAppNotice('Welcome! Hurry: Tenant spots are running out quickly. Secure your Tenant Sub now before spots fill up!');
+          }
         } catch (createErr: any) {
           setAuthError(createErr?.message || 'Unable to sign in with email. Please use Continue with Google.');
         }
@@ -3225,6 +3273,9 @@ export default function App() {
       const isMain = signedEmail === MAIN_TENANT_EMAIL;
       setAuthModalOpen(false);
       setActiveTab(isMain ? 'tenant' : 'gigs');
+      if (!isMain) {
+        setAppNotice('Notice: Tenant spots are running out quickly! Upgrade to Tenant Sub now to claim your spot and earn monthly referral income.');
+      }
     } catch (err: any) {
       setAuthError(err?.message || 'Google sign-in was cancelled or blocked.');
     } finally {
@@ -3398,6 +3449,10 @@ export default function App() {
         bankAccountNumber: cleanBankNumber,
         bankBranchCode: cleanBankBranch,
         bankReferenceNote: cleanBankRefNote,
+        approvalHoursEnabled: draftApprovalHoursEnabled,
+        approvalHoursStart: draftApprovalHoursStart,
+        approvalHoursEnd: draftApprovalHoursEnd,
+        approvalWorkingDays: draftApprovalWorkingDays,
       };
       const payload: Record<string, unknown> = {
         code: myReferralCode,
@@ -3409,11 +3464,15 @@ export default function App() {
         companyFee: updatedCfg.companyFee,
         trialDays: updatedCfg.trialDays,
         companyTrialDays: updatedCfg.companyTrialDays,
-        bankName: updatedCfg.bankName,
-        bankAccountHolder: updatedCfg.bankAccountHolder,
-        bankAccountNumber: updatedCfg.bankAccountNumber,
-        bankBranchCode: updatedCfg.bankBranchCode,
-        bankReferenceNote: updatedCfg.bankReferenceNote,
+        bankName: cleanBankName,
+        bankAccountHolder: cleanBankHolder,
+        bankAccountNumber: cleanBankNumber,
+        bankBranchCode: cleanBankBranch,
+        bankReferenceNote: cleanBankRefNote,
+        approvalHoursEnabled: draftApprovalHoursEnabled,
+        approvalHoursStart: draftApprovalHoursStart,
+        approvalHoursEnd: draftApprovalHoursEnd,
+        approvalWorkingDays: draftApprovalWorkingDays,
         updatedAt: Date.now(),
       };
       if (isMainTenant) {
@@ -3446,6 +3505,10 @@ export default function App() {
       setDraftBankAccountNumber(updatedCfg.bankAccountNumber);
       setDraftBankBranchCode(updatedCfg.bankBranchCode);
       setDraftBankReferenceNote(updatedCfg.bankReferenceNote);
+      setDraftApprovalHoursEnabled(updatedCfg.approvalHoursEnabled);
+      setDraftApprovalHoursStart(updatedCfg.approvalHoursStart);
+      setDraftApprovalHoursEnd(updatedCfg.approvalHoursEnd);
+      setDraftApprovalWorkingDays(updatedCfg.approvalWorkingDays);
       setTenantConfigSavedMsg('Settings saved');
       setTimeout(() => setTenantConfigSavedMsg(null), 2500);
     } catch (err) {
@@ -4490,6 +4553,41 @@ export default function App() {
       setAppNotice('Only the Referrer Tenant can decide on this referral subscription.');
       return;
     }
+
+    // Check working hours restriction if configured by referrer tenant
+    const referrerCode = sub.referrerCode || (isMainTenant ? MAIN_TENANT_REF_CODE : myReferralCode);
+    try {
+      const linkSnap = await getDoc(doc(db, 'referralLinks', referrerCode));
+      if (linkSnap.exists()) {
+        const ld = linkSnap.data();
+        if (ld.approvalHoursEnabled === true) {
+          const now = new Date();
+          const currentDay = now.getDay(); // 0 = Sun..6 = Sat
+          const allowedDaysStr = typeof ld.approvalWorkingDays === 'string' ? ld.approvalWorkingDays : '1,2,3,4,5';
+          const allowedDays = allowedDaysStr.split(',').map((n) => parseInt(n.trim(), 10)).filter((n) => !isNaN(n));
+          if (allowedDays.length > 0 && !allowedDays.includes(currentDay)) {
+            setAppNotice(`Approval is restricted to working days (${allowedDaysStr.replace(/0/g, 'Sun').replace(/1/g, 'Mon').replace(/2/g, 'Tue').replace(/3/g, 'Wed').replace(/4/g, 'Thu').replace(/5/g, 'Fri').replace(/6/g, 'Sat')}). Today is outside working days.`);
+            return;
+          }
+          const startStr = typeof ld.approvalHoursStart === 'string' ? ld.approvalHoursStart : '08:00';
+          const endStr = typeof ld.approvalHoursEnd === 'string' ? ld.approvalHoursEnd : '17:00';
+          const [startH, startM] = startStr.split(':').map((n) => parseInt(n, 10));
+          const [endH, endM] = endStr.split(':').map((n) => parseInt(n, 10));
+          const currentH = now.getHours();
+          const currentM = now.getMinutes();
+          const currentTotalM = currentH * 60 + currentM;
+          const startTotalM = (isNaN(startH) ? 8 : startH) * 60 + (isNaN(startM) ? 0 : startM);
+          const endTotalM = (isNaN(endH) ? 17 : endH) * 60 + (isNaN(endM) ? 0 : endM);
+          if (currentTotalM < startTotalM || currentTotalM > endTotalM) {
+            setAppNotice(`Approval is restricted to working hours between ${startStr} and ${endStr}. Current time is outside working hours.`);
+            return;
+          }
+        }
+      }
+    } catch {
+      // proceed if check fails
+    }
+
     const subCat = getSubCategory(sub.subType);
     const extraTrialDays = Math.max(
       0,
@@ -4606,19 +4704,19 @@ export default function App() {
   };
 
   // Dark Grey & Blurry Floating Tools Wallpaper Component
-  const FloatingToolsWallpaper = () => (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-25 blur-[2px]">
-      <div className="absolute top-10 left-12 animate-bounce duration-1000"><Wrench className="h-10 w-10 text-blue-400" /></div>
-      <div className="absolute bottom-16 right-16 animate-pulse"><Hammer className="h-12 w-12 text-indigo-400" /></div>
-      <div className="absolute top-1/3 right-1/4 animate-bounce"><Zap className="h-9 w-9 text-emerald-400" /></div>
-      <div className="absolute bottom-1/4 left-1/5 animate-pulse"><Sparkles className="h-10 w-10 text-amber-400" /></div>
-      <div className="absolute top-1/4 left-1/3 animate-bounce"><Users className="h-10 w-10 text-purple-400" /></div>
-      <div className="absolute bottom-12 left-1/2 animate-pulse"><Building2 className="h-14 w-14 text-cyan-400" /></div>
-      <div className="absolute top-1/2 right-10 animate-bounce"><Compass className="h-9 w-9 text-rose-400" /></div>
-      <div className="absolute top-12 right-1/3 animate-pulse"><Layers className="h-8 w-8 text-teal-400" /></div>
-      <div className="absolute bottom-1/3 left-10 animate-bounce"><Briefcase className="h-10 w-10 text-violet-400" /></div>
-      <div className="absolute top-2/3 right-1/2 animate-pulse"><Shield className="h-9 w-9 text-sky-400" /></div>
-      <div className="absolute top-8 right-8 animate-bounce"><Star className="h-8 w-8 text-yellow-400" /></div>
+  const FloatingToolsWallpaper = ({ opacity = 'opacity-25', isDark = true }: { opacity?: string; isDark?: boolean } = {}) => (
+    <div className={`absolute inset-0 overflow-hidden pointer-events-none ${opacity} blur-[2px]`}>
+      <div className="absolute top-10 left-12 animate-bounce duration-1000"><Wrench className={`h-10 w-10 ${isDark ? 'text-blue-400' : 'text-blue-500'}`} /></div>
+      <div className="absolute bottom-16 right-16 animate-pulse"><Hammer className={`h-12 w-12 ${isDark ? 'text-indigo-400' : 'text-indigo-500'}`} /></div>
+      <div className="absolute top-1/3 right-1/4 animate-bounce"><Zap className={`h-9 w-9 ${isDark ? 'text-emerald-400' : 'text-emerald-500'}`} /></div>
+      <div className="absolute bottom-1/4 left-1/5 animate-pulse"><Sparkles className={`h-10 w-10 ${isDark ? 'text-amber-400' : 'text-amber-500'}`} /></div>
+      <div className="absolute top-1/4 left-1/3 animate-bounce"><Users className={`h-10 w-10 ${isDark ? 'text-purple-400' : 'text-purple-500'}`} /></div>
+      <div className="absolute bottom-12 left-1/2 animate-pulse"><Building2 className={`h-14 w-14 ${isDark ? 'text-cyan-400' : 'text-cyan-500'}`} /></div>
+      <div className="absolute top-1/2 right-10 animate-bounce"><Compass className={`h-9 w-9 ${isDark ? 'text-rose-400' : 'text-rose-500'}`} /></div>
+      <div className="absolute top-12 right-1/3 animate-pulse"><Layers className={`h-8 w-8 ${isDark ? 'text-teal-400' : 'text-teal-500'}`} /></div>
+      <div className="absolute bottom-1/3 left-10 animate-bounce"><Briefcase className={`h-10 w-10 ${isDark ? 'text-violet-400' : 'text-violet-500'}`} /></div>
+      <div className="absolute top-2/3 right-1/2 animate-pulse"><Shield className={`h-9 w-9 ${isDark ? 'text-sky-400' : 'text-sky-500'}`} /></div>
+      <div className="absolute top-8 right-8 animate-bounce"><Star className={`h-8 w-8 ${isDark ? 'text-yellow-400' : 'text-yellow-500'}`} /></div>
     </div>
   );
 
@@ -5367,6 +5465,69 @@ export default function App() {
         </div>
       )}
 
+      {/* Reminder Banner for New Signup & Unsubscribed Users: Tenant Spots Running Out Quickly */}
+      {(activeTab === null || activeTab === 'gigs') &&
+        !isSubscriptionActive &&
+        !isMainTenant &&
+        !activeAcceptedHire &&
+        !navigatingCompany &&
+        !isPickingGigLocation &&
+        !dismissedTenantReminder && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-25 w-11/12 max-w-lg pointer-events-auto">
+            <div className="rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-600 p-[1.5px] shadow-2xl animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="rounded-[15px] bg-slate-950/95 backdrop-blur-md px-3.5 py-2.5 flex items-center justify-between gap-3 text-white">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 border border-amber-400/40 shrink-0">
+                    <Sparkles className="h-4 w-4 animate-spin duration-3000" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-amber-300">
+                        Tenant spots are running out quickly!
+                      </span>
+                      <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[8px] font-black uppercase tracking-widest animate-pulse">
+                        Fast Filling
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-300 truncate">
+                      {offerConfig.maxTenantSignups > 0
+                        ? `Only ${Math.max(0, offerConfig.maxTenantSignups - offerConfig.currentTenantSignups)} of ${offerConfig.maxTenantSignups} spots remaining. Claim yours now!`
+                        : 'Limited tenant spots available. Lock in your Tenant Sub to earn monthly referral profits!'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      if (!currentUser) {
+                        setAuthModalOpen(true);
+                      } else {
+                        setUpgradeModalOpen(true);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-md transition transform active:scale-95 whitespace-nowrap"
+                  >
+                    Claim Spot
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      setDismissedTenantReminder(true);
+                    }}
+                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition"
+                    title="Dismiss reminder"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
       {/* GiGs Top Pick-Location Banner */}
       {activeTab === 'gigs' && isPickingGigLocation && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-25 w-11/12 max-w-md rounded-2xl bg-slate-900 text-white px-4 py-3 shadow-2xl border border-slate-700 flex items-center justify-between gap-3 text-xs">
@@ -5945,16 +6106,22 @@ export default function App() {
 
         {/* Upgrade Icon Feature Bubble: hidden once subscription/trial is activated, reappears when ended */}
         {!isSubscriptionActive && (
-          <button
-            onClick={() => {
-              playClickSound();
-              setUpgradeModalOpen(true);
-            }}
-            className="flex items-center justify-center h-10 w-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-xl hover:opacity-90 transition transform active:scale-95"
-            title="Upgrade Subscriptions"
-          >
-            <Crown className="h-4 w-4" />
-          </button>
+          <div className="relative flex items-center">
+            <span className="absolute -top-1 -right-1 flex h-3 w-3 z-10 pointer-events-none">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+            </span>
+            <button
+              onClick={() => {
+                playClickSound();
+                setUpgradeModalOpen(true);
+              }}
+              className="flex items-center justify-center h-10 w-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-xl hover:opacity-90 transition transform active:scale-95"
+              title="Upgrade Subscriptions — Tenant spots running out quickly!"
+            >
+              <Crown className="h-4 w-4" />
+            </button>
+          </div>
         )}
       </div>
 
@@ -6159,16 +6326,19 @@ export default function App() {
         )}
       </div>
 
-      {/* Full Screen Feature View for Tenant, Profile, and Settings (Dark Grey Blurry Wallpaper) */}
+      {/* Full Screen Feature View for Tenant, Profile, and Settings (Dark Grey Blurry Wallpaper) — fills screen but keeps bottom menu bar visible */}
       {activeTab && activeTab !== 'gigs' && activeTab !== 'referrals' && activeTab !== 'seekers' && (
-        <div className="fixed inset-x-0 top-0 bottom-12 z-20 bg-zinc-900/90 backdrop-blur-2xl flex flex-col items-center justify-center p-4 text-slate-900 overflow-hidden">
+        <div className="fixed inset-x-0 top-0 bottom-12 z-20 bg-zinc-900/90 backdrop-blur-2xl flex flex-col items-center justify-start p-3 sm:p-5 text-slate-900 overflow-y-auto">
           <FloatingToolsWallpaper />
 
-          {/* Content Card (Compact, no scroll needed) */}
-          <div className="relative z-10 w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl border border-slate-200">
+          {/* Content Card (Full height / fill screen with scroll and background wallpaper) */}
+          <div className={`relative z-10 w-full ${activeTab === 'tenant' ? 'max-w-4xl min-h-full sm:min-h-0 sm:my-auto rounded-3xl' : 'max-w-2xl my-auto rounded-3xl'} bg-white/95 backdrop-blur-xl p-4 sm:p-6 shadow-2xl border border-slate-200/80 overflow-hidden`}>
+            {/* Show background wallpaper also inside Tenant feature */}
+            {activeTab === 'tenant' && <FloatingToolsWallpaper opacity="opacity-20" isDark={false} />}
+
             {/* TENANT FEATURE */}
             {activeTab === 'tenant' && (
-              <div>
+              <div className="relative z-10 flex flex-col h-full">
                 <div className="flex items-center justify-between gap-2 mb-4">
                   <div className="flex items-center gap-3 min-w-0">
                     <button
@@ -6264,37 +6434,44 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Profit Balances Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-3">
-                  <div className="rounded-2xl bg-slate-900 text-white p-3 shadow-lg">
-                    <span className="text-[10px] text-slate-400 font-medium block mb-0.5">Total Profit</span>
-                    <span className="text-base font-black text-emerald-400 tabular-nums">R{totalProfit.toFixed(2)}</span>
-                    <span className="text-[9px] text-slate-400 block mt-0.5 tabular-nums">
+                {/* Profit Grid: Total Profit, Ten, User, REF all same uniform size */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                  {/* Total Profit Bar */}
+                  <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-3 shadow-sm text-center flex flex-col justify-center">
+                    <span className="text-[10px] text-emerald-800 font-extrabold uppercase tracking-wider block mb-1">Total Profit</span>
+                    <span className="text-lg md:text-xl font-black text-emerald-600 tabular-nums">R{totalProfit.toFixed(2)}</span>
+                    <span className="text-[9px] text-emerald-700 block mt-1 tabular-nums">
                       {tenantSubApprovedCount + userSubApprovedCount + companySubApprovedCount} active subs
                     </span>
                   </div>
-                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 shadow-sm">
-                    <span className="text-[10px] text-slate-500 font-medium block mb-0.5">Tenant Sub</span>
-                    <span className="text-sm font-bold text-slate-900 tabular-nums">R{tenantProfit.toFixed(2)}</span>
-                    <span className="text-[9px] text-slate-500 block mt-0.5 tabular-nums">
+
+                  {/* Ten Bar */}
+                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 shadow-sm text-center flex flex-col justify-center">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mb-1">Ten (Tenant)</span>
+                    <span className="text-lg md:text-xl font-bold text-slate-900 tabular-nums">R{tenantProfit.toFixed(2)}</span>
+                    <span className="text-[9px] text-slate-500 block mt-1 tabular-nums">
                       {tenantSubApprovedCount}
-                      {myTenantConfig.maxTenantSignups > 0 ? `/${myTenantConfig.maxTenantSignups}` : ''} active (R{myTenantConfig.tenantFee.toFixed(2)})
+                      {myTenantConfig.maxTenantSignups > 0 ? `/${myTenantConfig.maxTenantSignups}` : ''} active
                     </span>
                   </div>
-                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 shadow-sm">
-                    <span className="text-[10px] text-slate-500 font-medium block mb-0.5">User Sub</span>
-                    <span className="text-sm font-bold text-slate-900 tabular-nums">R{userProfit.toFixed(2)}</span>
-                    <span className="text-[9px] text-slate-500 block mt-0.5 tabular-nums">
+
+                  {/* User Bar */}
+                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 shadow-sm text-center flex flex-col justify-center">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mb-1">User (User Sub)</span>
+                    <span className="text-lg md:text-xl font-bold text-slate-900 tabular-nums">R{userProfit.toFixed(2)}</span>
+                    <span className="text-[9px] text-slate-500 block mt-1 tabular-nums">
                       {userSubApprovedCount}
-                      {myTenantConfig.maxUserSignups > 0 ? `/${myTenantConfig.maxUserSignups}` : ''} active (R{myTenantConfig.userFee.toFixed(2)})
+                      {myTenantConfig.maxUserSignups > 0 ? `/${myTenantConfig.maxUserSignups}` : ''} active
                     </span>
                   </div>
-                  <div className="rounded-2xl bg-indigo-50/70 border border-indigo-200 p-3 shadow-sm">
-                    <span className="text-[10px] text-indigo-700 font-medium block mb-0.5">Company Sub</span>
-                    <span className="text-sm font-bold text-indigo-950 tabular-nums">R{companyProfit.toFixed(2)}</span>
-                    <span className="text-[9px] text-indigo-700 block mt-0.5 tabular-nums">
+
+                  {/* REF Bar */}
+                  <div className="rounded-2xl bg-indigo-50/80 border border-indigo-200 p-3 shadow-sm text-center flex flex-col justify-center">
+                    <span className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider block mb-1">REF (Company)</span>
+                    <span className="text-lg md:text-xl font-bold text-indigo-950 tabular-nums">R{companyProfit.toFixed(2)}</span>
+                    <span className="text-[9px] text-indigo-700 block mt-1 tabular-nums">
                       {companySubApprovedCount}
-                      {myTenantConfig.maxCompanySignups > 0 ? `/${myTenantConfig.maxCompanySignups}` : ''} active (R{myTenantConfig.companyFee.toFixed(2)})
+                      {myTenantConfig.maxCompanySignups > 0 ? `/${myTenantConfig.maxCompanySignups}` : ''} active
                     </span>
                   </div>
                 </div>
@@ -6724,6 +6901,7 @@ export default function App() {
                     { id: 'trials', label: 'Trial Days' },
                     { id: 'limits', label: 'Signup Limits' },
                     { id: 'bank', label: 'Bank Details' },
+                    { id: 'hours', label: 'Working Hours' },
                   ] as const
                 ).map((item) => (
                   <button
@@ -7223,6 +7401,126 @@ export default function App() {
                   </button>
                 </form>
               )}
+
+              {/* SECTION 5: WORKING HOURS FOR APPROVING SUBMISSIONS */}
+              {tenantMenuSection === 'hours' && (
+                <form
+                  onSubmit={handleSaveTenantConfig}
+                  className="rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 space-y-4 text-xs"
+                >
+                  <div className="border-b border-slate-100 pb-3">
+                    <h3 className="text-base font-extrabold text-slate-900">Working Hours for Approving Submissions</h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Restrict when referrals can be approved to specific days and hours
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">Enable Working Hours Restriction</h4>
+                      <p className="text-[11px] text-slate-500">
+                        When enabled, approvals outside configured working hours or days will be blocked
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={draftApprovalHoursEnabled}
+                      onClick={() => setDraftApprovalHoursEnabled((prev) => !prev)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        draftApprovalHoursEnabled ? 'bg-blue-600' : 'bg-slate-300'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          draftApprovalHoursEnabled ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {draftApprovalHoursEnabled && (
+                    <div className="space-y-4 animate-in fade-in duration-200">
+                      <div className="grid grid-cols-2 gap-3.5">
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-1">Start Time (24h)</label>
+                          <input
+                            type="time"
+                            value={draftApprovalHoursStart}
+                            onChange={(e) => setDraftApprovalHoursStart(e.target.value)}
+                            className="w-full rounded-xl bg-slate-50 border border-slate-200 p-2.5 text-slate-900 font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-1">End Time (24h)</label>
+                          <input
+                            type="time"
+                            value={draftApprovalHoursEnd}
+                            onChange={(e) => setDraftApprovalHoursEnd(e.target.value)}
+                            className="w-full rounded-xl bg-slate-50 border border-slate-200 p-2.5 text-slate-900 font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">Working Days</label>
+                        <div className="grid grid-cols-7 gap-1.5 pt-1">
+                          {[
+                            { id: '1', label: 'Mon' },
+                            { id: '2', label: 'Tue' },
+                            { id: '3', label: 'Wed' },
+                            { id: '4', label: 'Thu' },
+                            { id: '5', label: 'Fri' },
+                            { id: '6', label: 'Sat' },
+                            { id: '0', label: 'Sun' },
+                          ].map((day) => {
+                            const daysArr = draftApprovalWorkingDays.split(',').map((s) => s.trim());
+                            const isSelected = daysArr.includes(day.id);
+                            return (
+                              <button
+                                key={day.id}
+                                type="button"
+                                onClick={() => {
+                                  playClickSound();
+                                  let nextArr = [...daysArr];
+                                  if (isSelected) {
+                                    nextArr = nextArr.filter((d) => d !== day.id);
+                                  } else {
+                                    nextArr.push(day.id);
+                                  }
+                                  // Sort standard weekday order: 1,2,3,4,5,6,0
+                                  const order = ['1', '2', '3', '4', '5', '6', '0'];
+                                  nextArr.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+                                  setDraftApprovalWorkingDays(nextArr.filter(Boolean).join(','));
+                                }}
+                                className={`py-2 rounded-xl text-xs font-bold transition border ${
+                                  isSelected
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                }`}
+                              >
+                                {day.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1.5">
+                          Selected days: {draftApprovalWorkingDays ? draftApprovalWorkingDays.split(',').map(d => d === '1' ? 'Mon' : d === '2' ? 'Tue' : d === '3' ? 'Wed' : d === '4' ? 'Thu' : d === '5' ? 'Fri' : d === '6' ? 'Sat' : 'Sun').join(', ') : 'None'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isSavingTenantConfig}
+                    className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-md shadow-blue-600/20 transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isSavingTenantConfig && <Loader2 className="h-4 w-4 animate-spin" />}
+                    <span>Save Working Hours</span>
+                  </button>
+                </form>
+              )}
             </div>
           </div>
         </div>
@@ -7246,10 +7544,23 @@ export default function App() {
               <X className="h-4 w-4" />
             </button>
 
-            <h2 className="relative z-10 text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-1.5">
+            <h2 className="relative z-10 text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
               <Crown className="h-3.5 w-3.5 text-amber-500" />
               <span>Upgrade Subscription</span>
             </h2>
+
+            {/* Urgent Tenant Spots Reminder */}
+            <div className="relative z-10 w-full mb-3 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-600 p-2.5 text-white shadow-md text-center">
+              <div className="flex items-center justify-center gap-1 text-[11px] font-black uppercase tracking-wider">
+                <Sparkles className="h-3.5 w-3.5 text-yellow-200 animate-spin duration-3000" />
+                <span>Tenant spots are running out quickly!</span>
+              </div>
+              <p className="text-[10px] text-amber-100 font-medium mt-0.5">
+                {offerConfig.maxTenantSignups > 0
+                  ? `Hurry! Only ${Math.max(0, offerConfig.maxTenantSignups - offerConfig.currentTenantSignups)} of ${offerConfig.maxTenantSignups} spots remain.`
+                  : 'High demand — Tenant slots are filling fast. Secure your spot now to earn monthly referral profits.'}
+              </p>
+            </div>
 
             <div className="relative z-10 flex flex-col items-center gap-3.5 w-full">
               {/* Box 1: Tenant Sub */}
@@ -7266,6 +7577,18 @@ export default function App() {
                         : 'cursor-pointer border-slate-300 hover:border-blue-600 hover:shadow-xl'
                     }`}
                   >
+                    {/* Urgency Pill Badge */}
+                    <div className="w-full flex items-center justify-between px-1">
+                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-wider animate-pulse flex items-center gap-1 shadow-sm">
+                        <Zap className="h-2.5 w-2.5" /> Spots Running Out Fast
+                      </span>
+                      {offerConfig.maxTenantSignups > 0 && (
+                        <span className="text-[10px] font-black text-rose-600 tabular-nums">
+                          {Math.max(0, offerConfig.maxTenantSignups - offerConfig.currentTenantSignups)} left!
+                        </span>
+                      )}
+                    </div>
+
                     <div className="flex items-center gap-2">
                       <div className="p-1.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
                         <Building2 className="h-4 w-4" />
@@ -7424,6 +7747,20 @@ export default function App() {
                 Capture face selfie, upload ID documents & proof of payment
               </p>
             </div>
+
+            {selectedSubTier?.includes('Tenant') && (
+              <div className="mb-4 p-3 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 flex items-center gap-2.5 text-xs text-amber-950 shadow-sm">
+                <Sparkles className="h-4 w-4 text-amber-600 shrink-0" />
+                <div className="min-w-0">
+                  <span className="font-bold block text-[11px] uppercase tracking-wide text-amber-900">
+                    Tenant Spot Temporarily Held!
+                  </span>
+                  <span className="text-[10px] text-amber-800 block mt-0.5">
+                    Tenant spots are running out quickly. Submit your verification now to finalize and secure your spot before registration fills up.
+                  </span>
+                </div>
+              </div>
+            )}
 
             {((selectedSubTier?.includes('Company') ? offerConfig.companyTrialDays : offerConfig.trialDays) > 0) && !myTrialEndsAt && (
               <div className="mb-4 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2 text-xs">
@@ -7620,6 +7957,28 @@ export default function App() {
                   Referral code attached: {pendingRefCode}
                 </p>
               )}
+            </div>
+
+            {/* Urgency Reminder for New Signups */}
+            <div className="mb-4 rounded-2xl bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 border border-amber-200/90 p-3 text-left flex items-start gap-2.5 shadow-sm">
+              <div className="p-1.5 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shrink-0 mt-0.5 shadow">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <h4 className="text-[11px] font-black text-amber-950 uppercase tracking-wide">
+                    Tenant spots are running out quickly!
+                  </h4>
+                  <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[8px] font-black uppercase">
+                    Urgent
+                  </span>
+                </div>
+                <p className="text-[10px] text-amber-900 leading-snug mt-0.5">
+                  {offerConfig.maxTenantSignups > 0
+                    ? `Only ${Math.max(0, offerConfig.maxTenantSignups - offerConfig.currentTenantSignups)} of ${offerConfig.maxTenantSignups} spots remain before registration closes. Sign up now to secure your monthly referral earnings.`
+                    : 'Limited spots available. New signup users can claim a Tenant spot to earn monthly income from referred users and businesses.'}
+                </p>
+              </div>
             </div>
 
             {authError && (
