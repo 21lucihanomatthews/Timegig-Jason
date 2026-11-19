@@ -19,6 +19,10 @@ import {
   Share2, 
   Zap, 
   Users, 
+  UserSearch,
+  IdCard,
+  PartyPopper,
+  FileCheck2,
   Wrench, 
   Hammer, 
   Sparkles, 
@@ -63,7 +67,8 @@ import {
   Globe,
   Phone,
   Store,
-  Bot
+  Bot,
+  Smartphone
 } from 'lucide-react';
 
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
@@ -81,6 +86,7 @@ import {
   collection, 
   doc, 
   getDoc,
+  getDocs,
   setDoc, 
   updateDoc, 
   deleteDoc, 
@@ -557,7 +563,7 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [showDropdown, setShowDropdown] = useState<boolean>(false);
-  const [isSatellite, setIsSatellite] = useState<boolean>(false);
+  const [isSatellite, setIsSatellite] = useState<boolean>(true);
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -581,18 +587,40 @@ export default function App() {
   });
   const [activeReferrer, setActiveReferrer] = useState<ReferrerInfo | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
+  const [authTab, setAuthTab] = useState<'signup' | 'signin'>('signup');
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(false);
+  const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
+  const [termsDetailsOpen, setTermsDetailsOpen] = useState<boolean>(false);
+  const [congratsModalOpen, setCongratsModalOpen] = useState<boolean>(false);
+  const [userProfileLoaded, setUserProfileLoaded] = useState<boolean>(false);
   const [appNotice, setAppNotice] = useState<string | null>(null);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState<boolean>(false);
   const [onboardingModalOpen, setOnboardingModalOpen] = useState<boolean>(false);
   const [selectedSubTier, setSelectedSubTier] = useState<SubTierOption | null>(null);
   const [chosenSubscription, setChosenSubscription] = useState<'tenant' | 'user' | 'company' | null>(null);
   const [dismissedTenantReminder, setDismissedTenantReminder] = useState<boolean>(false);
+  const [showSplash, setShowSplash] = useState<boolean>(true);
+  const [authResolved, setAuthResolved] = useState<boolean>(false);
+  const [startupSubChooserDismissed, setStartupSubChooserDismissed] = useState<boolean>(false);
+  const [startupIntentOpen, setStartupIntentOpen] = useState<boolean>(false);
+  const [startupIntentChoice, setStartupIntentChoice] = useState<'gig' | 'tenant' | null>(null);
+  const [hasCompletedStartupIntent, setHasCompletedStartupIntent] = useState<boolean>(false);
+  const startupRedirectDoneRef = useRef<boolean>(false);
+  const pendingAuthSubTierRef = useRef<SubTierOption | null>(null);
+  const pendingTermsAcceptedAtRef = useRef<number | null>(null);
+
+  // Intro display of app name TimeGiG before signup/signin screen
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, []);
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<ActiveTab>(null);
+  const [activeTab, setActiveTab] = useState<ActiveTab>('gigs');
   const [tenantMenuOpen, setTenantMenuOpen] = useState<boolean>(false);
   const [tenantMenuSection, setTenantMenuSection] = useState<'fees' | 'trials' | 'limits' | 'bank' | 'hours'>('fees');
   const [myTenantConfig, setMyTenantConfig] = useState<TenantOfferConfig>(DEFAULT_TENANT_CONFIG);
@@ -757,11 +785,15 @@ export default function App() {
   const [firstName, setFirstName] = useState<string>('');
   const [lastName, setLastName] = useState<string>('');
   const [locationInput, setLocationInput] = useState<string>('');
+  const [contactInfo, setContactInfo] = useState<string>('');
+  const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
+  const [profileSuccessMsg, setProfileSuccessMsg] = useState<string | null>(null);
   const [locationSuggestions, setLocationSuggestions] = useState<SearchResult[]>([]);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
 
   // Referrals & Seekers search + Service & Hiring state
   const [referralQuery, setReferralQuery] = useState<string>('');
+  const [referralStatusFilter, setReferralStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'frozen'>('all');
   const [seekerQuery, setSeekerQuery] = useState<string>('');
   const [seekersList, setSeekersList] = useState<SeekerProfile[]>([]);
   const [seekerRatingsMap, setSeekerRatingsMap] = useState<Record<string, SeekerRatingSummary>>({});
@@ -905,10 +937,7 @@ export default function App() {
     reader.onload = async () => {
       let dataUrl = reader.result as string;
       if (file.type.startsWith('image/')) {
-        dataUrl = await compressImageDataUrl(dataUrl);
-      } else if (dataUrl.length > 850000) {
-        setAppNotice('ID PDF exceeds maximum upload size (~650 KB). Please upload a smaller PDF or image.');
-        return;
+        dataUrl = await compressImageDataUrl(dataUrl, 1800, 0.9);
       }
       const sizeStr = file.size > 1024 * 1024 
         ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
@@ -931,10 +960,7 @@ export default function App() {
     reader.onload = async () => {
       let dataUrl = reader.result as string;
       if (file.type.startsWith('image/')) {
-        dataUrl = await compressImageDataUrl(dataUrl);
-      } else if (dataUrl.length > 850000) {
-        setAppNotice('Proof of Payment PDF exceeds maximum upload size (~650 KB). Please upload a smaller PDF or image.');
-        return;
+        dataUrl = await compressImageDataUrl(dataUrl, 1800, 0.9);
       }
       const sizeStr = file.size > 1024 * 1024 
         ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
@@ -960,7 +986,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('Camera access error:', err);
-      alert('Unable to access camera. Please ensure camera permissions are enabled in your browser settings.');
+      setAppNotice('Unable to access camera. Please ensure camera permissions are enabled in your browser settings.');
       setCameraModalOpen(false);
     }
   };
@@ -993,6 +1019,12 @@ export default function App() {
         compressImageDataUrl(dataUrl, 240, 0.65).then((thumb) => {
           setMyAvatarThumb(thumb);
           if (currentUser) {
+            const safeThumb = thumb && thumb.length <= 420000 ? thumb : null;
+            if (safeThumb) {
+              updateDoc(doc(db, 'users', currentUser.uid), { avatar: safeThumb }).catch((err) =>
+                console.warn('User avatar sync:', err)
+              );
+            }
             const safeStatus: 'inactive' | 'active' | 'pending' | 'approved' | 'rejected' | 'frozen' =
               isMainTenant
                 ? 'approved'
@@ -1067,19 +1099,73 @@ export default function App() {
   const [mySubmissionStatus, setMySubmissionStatus] = useState<'none' | 'pending' | 'approved' | 'rejected' | 'frozen'>('none');
   const [myApprovalExpiry, setMyApprovalExpiry] = useState<number | null>(null);
 
+  const hasActiveTrial = typeof myTrialEndsAt === 'number' && myTrialEndsAt > nowMs;
+  const isTrialExpired = typeof myTrialEndsAt === 'number' && myTrialEndsAt <= nowMs;
+  const hasActiveApproval =
+    mySubmissionStatus === 'approved' &&
+    (myApprovalExpiry === null || myApprovalExpiry > nowMs);
+  const isApprovalExpired =
+    mySubmissionStatus === 'approved' &&
+    typeof myApprovalExpiry === 'number' &&
+    myApprovalExpiry <= nowMs;
+  const isSubscriptionEnded =
+    !isMainTenant &&
+    (isApprovalExpired ||
+      (mySubmissionStatus === 'none' && isTrialExpired) ||
+      mySubmissionStatus === 'rejected');
   const isSubscriptionActive =
     isMainTenant ||
-    (mySubmissionStatus === 'approved' && (!myApprovalExpiry || myApprovalExpiry > nowMs)) ||
-    (mySubmissionStatus === 'none' && myTrialEndsAt !== null && myTrialEndsAt > nowMs);
+    hasActiveApproval ||
+    hasActiveTrial ||
+    mySubmissionStatus === 'pending';
+  const isSubscriptionLocked =
+    !isMainTenant && chosenSubscription !== null && !isSubscriptionEnded;
 
-  // Keep unsubscribed or unapproved (inactive) users restricted to GiGs view until approved
+  // Startup routing: Splash -> What User Wants to Do (new signups) / Login -> Congrats -> Subscription Screen
   useEffect(() => {
-    if (isAuthenticated && !isMainTenant && (!chosenSubscription || !isSubscriptionActive)) {
-      if (activeTab && activeTab !== 'gigs') {
+    if (showSplash || !authResolved) return;
+    if (!isAuthenticated) {
+      if (!hasCompletedStartupIntent && !authModalOpen) {
+        setStartupIntentOpen(true);
+      } else if (!authModalOpen) {
+        setAuthModalOpen(true);
+      }
+      return;
+    }
+    setStartupIntentOpen(false);
+    if (
+      userProfileLoaded &&
+      !isMainTenant &&
+      (!chosenSubscription || isSubscriptionEnded) &&
+      !congratsModalOpen &&
+      !onboardingModalOpen &&
+      !startupSubChooserDismissed
+    ) {
+      setUpgradeModalOpen(true);
+    }
+  }, [
+    showSplash,
+    authResolved,
+    isAuthenticated,
+    hasCompletedStartupIntent,
+    authModalOpen,
+    userProfileLoaded,
+    isMainTenant,
+    chosenSubscription,
+    isSubscriptionEnded,
+    congratsModalOpen,
+    onboardingModalOpen,
+    startupSubChooserDismissed,
+  ]);
+
+  // Keep inactive or expired users restricted to GiGs view until they choose and activate a subscription
+  useEffect(() => {
+    if (isAuthenticated && !isMainTenant && !isSubscriptionActive) {
+      if (activeTab && activeTab !== 'gigs' && activeTab !== 'settings') {
         setActiveTab('gigs');
       }
     }
-  }, [isAuthenticated, isMainTenant, chosenSubscription, isSubscriptionActive, activeTab]);
+  }, [isAuthenticated, isMainTenant, isSubscriptionActive, activeTab]);
 
   // Countdown timer string
   const [timeLeft, setTimeLeft] = useState<string>('30d 00h 00m');
@@ -1155,9 +1241,6 @@ export default function App() {
     ownerTier: ReferralTier,
     displayName: string
   ) => {
-    if (ownerTier === 'main_tenant' && !fbUser.emailVerified) {
-      return;
-    }
     try {
       const linkRef = doc(db, 'referralLinks', code);
       const existingLinkSnap = await getDoc(linkRef).catch(() => null);
@@ -1178,12 +1261,64 @@ export default function App() {
     }
   };
 
+  // Ensure a referral submission is recorded for the target tenant (Main Tenant receives all User Sub referrals)
+  const ensureSignupReferralSubmission = async (
+    fbUser: FirebaseUser,
+    routing: ReturnType<typeof resolveReferralRouting>,
+    tierName: SubTierOption = 'User Sub (R29.99)',
+    displayNameOverride?: string
+  ) => {
+    if (!routing.referrerUid || routing.referrerUid === fbUser.uid) return;
+    try {
+      const existingSubs = await getDocs(
+        query(collection(db, 'submissions'), where('userId', '==', fbUser.uid))
+      );
+      if (!existingSubs.empty) return;
+
+      const subId = `sub-ref-${fbUser.uid}`;
+      const now = Date.now();
+      const userName =
+        (displayNameOverride || fbUser.displayName || fbUser.email?.split('@')[0] || 'New User')
+          .trim()
+          .slice(0, 160) || 'New User';
+
+      const newSub: Submission = {
+        id: subId,
+        userId: fbUser.uid,
+        userName,
+        userEmail: (fbUser.email || '').slice(0, 320),
+        subType: tierName,
+        feeAmount: 0,
+        selfie: null,
+        idDoc: null,
+        popDoc: null,
+        status: 'pending',
+        submittedAt: now,
+        referrerCode: routing.referrerCode,
+        referrerUid: routing.referrerUid,
+        referrerTier: routing.referrerTier,
+        targetTenantEmail: routing.targetTenantEmail,
+        targetTenantUid: routing.targetTenantUid,
+        routingLabel: routing.routingLabel,
+      };
+      await setDoc(doc(db, 'submissions', subId), newSub);
+    } catch (err) {
+      console.warn('Auto referral submission skipped:', err);
+    }
+  };
+
   // Listen to Firebase Auth state & resolve referral attribution
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
+      setAuthResolved(true);
       if (fbUser) {
+        setUserProfileLoaded(false);
         setCurrentUser(fbUser);
         setIsAuthenticated(true);
+        if (!startupRedirectDoneRef.current) {
+          startupRedirectDoneRef.current = true;
+          setActiveTab('gigs');
+        }
         const normalizedEmail = (fbUser.email || '').trim().toLowerCase();
         const userIsMain = normalizedEmail === MAIN_TENANT_EMAIL;
         setIsMainTenant(userIsMain);
@@ -1368,6 +1503,11 @@ export default function App() {
             if (existingData.firstName) setFirstName(existingData.firstName);
             if (existingData.lastName) setLastName(existingData.lastName);
             if (existingData.location) setLocationInput(existingData.location);
+            if (existingData.contactPhone || existingData.contact) {
+              setContactInfo(existingData.contactPhone || existingData.contact);
+            }
+            if (existingData.selfie) setSelfieDataUrl(existingData.selfie);
+            if (existingData.avatar) setMyAvatarThumb(existingData.avatar);
             setMyTrialEndsAt(typeof existingData.trialEndsAt === 'number' ? existingData.trialEndsAt : null);
 
             if (userIsMain) {
@@ -1375,15 +1515,13 @@ export default function App() {
               setMySubmissionStatus('approved');
               setMyApprovalExpiry(Date.now() + 1000 * 60 * 60 * 24 * 365);
               if (!existingData.isMainTenant || !existingData.referralCode || !existingData.createdAt) {
-                if (fbUser.emailVerified) {
-                  await updateDoc(userDocRef, {
-                    isMainTenant: true,
-                    subscriptionTier: 'tenant',
-                    subscriptionStatus: 'approved',
-                    referralCode: MAIN_TENANT_REF_CODE,
-                    createdAt: existingData.createdAt || new Date().toISOString(),
-                  });
-                }
+                await updateDoc(userDocRef, {
+                  isMainTenant: true,
+                  subscriptionTier: 'tenant',
+                  subscriptionStatus: 'approved',
+                  referralCode: MAIN_TENANT_REF_CODE,
+                  createdAt: existingData.createdAt || new Date().toISOString(),
+                });
               }
               await syncReferralLinkDoc(
                 fbUser,
@@ -1398,10 +1536,20 @@ export default function App() {
               } else {
                 setChosenSubscription(null);
               }
-              if ((shouldResolveFromRef && resolvedReferrer) || !existingData.referralCode || !existingData.createdAt) {
+              const pendingTermsTs = pendingTermsAcceptedAtRef.current;
+              pendingTermsAcceptedAtRef.current = null;
+              if (
+                (shouldResolveFromRef && resolvedReferrer) ||
+                !existingData.referralCode ||
+                !existingData.createdAt ||
+                (pendingTermsTs && !existingData.termsAcceptedAt)
+              ) {
                 await updateDoc(userDocRef, {
                   referralCode: resolvedCode,
                   createdAt: existingData.createdAt || new Date().toISOString(),
+                  ...(pendingTermsTs && !existingData.termsAcceptedAt
+                    ? { termsAcceptedAt: pendingTermsTs }
+                    : {}),
                   ...(shouldResolveFromRef && resolvedReferrer
                     ? {
                         referredByCode: routing.referrerCode,
@@ -1442,12 +1590,15 @@ export default function App() {
             await syncSeekerDoc(fbUser, {
               displayName: `${existingData.firstName || displayFirst || ''} ${existingData.lastName || displayLast || ''}`.trim(),
               location: existingData.location || '',
+              avatar: existingData.avatar || existingData.selfie || null,
               tier: seekerTier,
               status: validSeekerStatus,
             });
           } else {
             const initialTier = userIsMain ? 'tenant' : 'none';
             const initialStatus = userIsMain ? 'approved' : 'none';
+            const pendingTermsTs = pendingTermsAcceptedAtRef.current;
+            pendingTermsAcceptedAtRef.current = null;
             await setDoc(userDocRef, {
               uid: fbUser.uid,
               email: fbUser.email || '',
@@ -1456,13 +1607,14 @@ export default function App() {
               location: '',
               subscriptionTier: initialTier,
               subscriptionStatus: initialStatus,
-              isMainTenant: userIsMain && fbUser.emailVerified,
+              isMainTenant: userIsMain,
               referralCode: resolvedCode,
               referredByCode: userIsMain ? MAIN_TENANT_REF_CODE : routing.referrerCode,
               referredByUid: userIsMain ? fbUser.uid : routing.referrerUid,
               referredByTier: userIsMain ? 'main_tenant' : routing.referrerTier,
               uplineTenantEmail: userIsMain ? MAIN_TENANT_EMAIL : routing.targetTenantEmail,
               uplineTenantUid: userIsMain ? fbUser.uid : routing.targetTenantUid,
+              ...(pendingTermsTs ? { termsAcceptedAt: pendingTermsTs } : {}),
               createdAt: new Date().toISOString(),
             });
 
@@ -1499,8 +1651,11 @@ export default function App() {
           }
         } catch (err) {
           console.warn('User profile sync:', err);
+        } finally {
+          setUserProfileLoaded(true);
         }
       } else {
+        setUserProfileLoaded(false);
         setCurrentUser(null);
         setIsAuthenticated(false);
         setIsMainTenant(false);
@@ -2053,7 +2208,7 @@ export default function App() {
 
   // Main Tenant real-time list of Referral Tenants to manage their Tenant/User/Company Sub signup limits
   useEffect(() => {
-    if (!isAuthenticated || !currentUser || !isMainTenant || !currentUser.emailVerified) {
+    if (!isAuthenticated || !currentUser || !isMainTenant) {
       setReferralTenants([]);
       return;
     }
@@ -2111,16 +2266,8 @@ export default function App() {
       return;
     }
 
-    // Only Main Tenant and Referral Tenants (Tenant Sub) receive referral submissions
-    if (!isMainTenant && chosenSubscription !== 'tenant') {
-      setSubmissions([]);
-      seenSubmissionIdsRef.current = new Set();
-      submissionsInitializedRef.current = false;
-      return;
-    }
-
-    // Main Tenant security rules require verified email_verified == true
-    if (isMainTenant && !currentUser.emailVerified) {
+    // Only Main Tenant and Referral Tenants (Tenant Sub / non-user mode) receive referral submissions
+    if (!isMainTenant && chosenSubscription === 'user') {
       setSubmissions([]);
       seenSubmissionIdsRef.current = new Set();
       submissionsInitializedRef.current = false;
@@ -2236,7 +2383,7 @@ export default function App() {
     );
 
     let unsubAllFeedback: (() => void) | null = null;
-    if (isMainTenant && currentUser.emailVerified) {
+    if (isMainTenant) {
       unsubAllFeedback = onSnapshot(
         collection(db, 'feedback'),
         (snapshot) => {
@@ -2262,7 +2409,7 @@ export default function App() {
 
   // Mark feedback items as read once Main Tenant opens the User Feedback Inbox
   useEffect(() => {
-    if (!feedbackInboxOpen || !isMainTenant || !currentUser || !currentUser.emailVerified) return;
+    if (!feedbackInboxOpen || !isMainTenant || !currentUser) return;
     const unreadItems = feedbackList.filter((fb) => !fb.readByMainTenant);
     if (unreadItems.length === 0) return;
 
@@ -2321,7 +2468,6 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated || !currentUser || !myReferralCode) return;
     if (!isMainTenant && chosenSubscription !== 'tenant') return;
-    if (isMainTenant && !currentUser.emailVerified) return;
     if (
       myTenantConfig.currentTenantSignups === tenantSubTotalSignups &&
       myTenantConfig.currentUserSignups === userSubTotalSignups &&
@@ -2431,7 +2577,8 @@ export default function App() {
         attributionControl: false
       }).setView([defaultLat, defaultLng], 13);
 
-      const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      const initialLayerUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+      const tileLayer = L.tileLayer(initialLayerUrl, {
         maxZoom: 19,
         attribution: ''
       }).addTo(map);
@@ -3192,29 +3339,76 @@ export default function App() {
     setTimeout(() => setCopiedLink(null), 2000);
   };
 
-  const saveProfileFields = async (nextFirst: string, nextLast: string, nextLocation: string) => {
+  const saveProfileFields = async (
+    nextFirst: string,
+    nextLast: string,
+    nextLocation: string,
+    nextContact?: string,
+    throwOnError = false
+  ) => {
     if (!currentUser) return;
     try {
+      const resolvedContact = (nextContact ?? contactInfo).trim().slice(0, 80);
       await updateDoc(doc(db, 'users', currentUser.uid), {
-        firstName: nextFirst,
-        lastName: nextLast,
-        location: nextLocation,
+        firstName: nextFirst.slice(0, 120),
+        lastName: nextLast.slice(0, 120),
+        location: nextLocation.slice(0, 300),
+        contactPhone: resolvedContact,
       });
       await syncSeekerDoc(currentUser, {
         displayName: `${nextFirst} ${nextLast}`.trim(),
         location: nextLocation,
-        avatar: myAvatarThumb,
+        avatar: myAvatarThumb || selfieDataUrl,
         tier: chosenSubscription || 'seeker',
         status: isSubscriptionActive
           ? mySubmissionStatus === 'approved' || isMainTenant
             ? 'approved'
+            : mySubmissionStatus === 'pending'
+            ? 'pending'
             : 'active'
-          : mySubmissionStatus === 'pending' || mySubmissionStatus === 'rejected' || mySubmissionStatus === 'frozen'
+          : mySubmissionStatus === 'rejected' || mySubmissionStatus === 'frozen'
           ? mySubmissionStatus
           : 'inactive',
       });
     } catch (err) {
+      if (throwOnError) {
+        try {
+          handleFirestoreError(err, OperationType.UPDATE, `users/${currentUser.uid}`);
+        } catch (wrapped) {
+          throw wrapped;
+        }
+      }
       console.warn('Profile update skipped:', err);
+    }
+  };
+
+  const handleProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) {
+      setAuthModalOpen(true);
+      return;
+    }
+    if (!firstName.trim() || !lastName.trim() || !locationInput.trim() || !contactInfo.trim()) {
+      setAppNotice('Please fill in all required fields (Name, Surname, Location, and Contact Information).');
+      return;
+    }
+    setIsSavingProfile(true);
+    setProfileSuccessMsg(null);
+    try {
+      await saveProfileFields(
+        firstName.trim(),
+        lastName.trim(),
+        locationInput.trim(),
+        contactInfo.trim(),
+        true
+      );
+      setProfileSuccessMsg('Profile updated successfully!');
+      setTimeout(() => setProfileSuccessMsg(null), 3000);
+    } catch (err) {
+      console.error('Failed to save profile:', err);
+      setAppNotice('Unable to save profile right now. Please try again.');
+    } finally {
+      setIsSavingProfile(false);
     }
   };
 
@@ -3222,42 +3416,91 @@ export default function App() {
     e.preventDefault();
     if (!email) return;
     setAuthError(null);
+
+    if (authTab === 'signup') {
+      if (!acceptedTerms) {
+        setAuthError('Please accept the Terms and Conditions to sign up.');
+        return;
+      }
+      setIsAuthLoading(true);
+      pendingTermsAcceptedAtRef.current = Date.now();
+      try {
+        await createUserWithEmailAndPassword(auth, email.trim(), password);
+        try {
+          if (auth.currentUser) await sendEmailVerification(auth.currentUser);
+        } catch {
+          // non-fatal
+        }
+        const isMain = email.trim().toLowerCase() === MAIN_TENANT_EMAIL;
+        setAuthModalOpen(false);
+        setStartupSubChooserDismissed(true);
+        setPassword('');
+        setActiveTab('gigs');
+        pendingAuthSubTierRef.current = null;
+        if (!isMain) {
+          setCongratsModalOpen(true);
+        }
+      } catch (createErr: any) {
+        pendingTermsAcceptedAtRef.current = null;
+        if (createErr?.code === 'auth/email-already-in-use') {
+          try {
+            const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+            const isMain = email.trim().toLowerCase() === MAIN_TENANT_EMAIL;
+            setAuthModalOpen(false);
+            setStartupSubChooserDismissed(true);
+            setPassword('');
+            setActiveTab('gigs');
+            pendingAuthSubTierRef.current = null;
+            if (!isMain) {
+              try {
+                const uSnap = await getDoc(doc(db, 'users', cred.user.uid));
+                const uData = uSnap.exists() ? uSnap.data() : null;
+                const uTier = uData?.subscriptionTier;
+                const uStatus = uData?.subscriptionStatus;
+                if (!uTier || uTier === 'none' || uStatus === 'rejected') {
+                  setUpgradeModalOpen(true);
+                }
+              } catch {
+                // keep directed to GiGs
+              }
+            }
+          } catch {
+            setAuthTab('signin');
+            setAuthError('This email is already registered. Please enter your password to Sign In.');
+          }
+        } else {
+          setAuthError(createErr?.message || 'Unable to create account. Please check your details or try Continue with Google.');
+        }
+      } finally {
+        setIsAuthLoading(false);
+      }
+      return;
+    }
+
     setIsAuthLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
       const isMain = email.trim().toLowerCase() === MAIN_TENANT_EMAIL;
       setAuthModalOpen(false);
+      setStartupSubChooserDismissed(true);
       setPassword('');
-      setActiveTab(isMain ? 'tenant' : 'gigs');
+      setActiveTab('gigs');
+      pendingAuthSubTierRef.current = null;
       if (!isMain) {
-        setAppNotice('Notice: Tenant spots are running out quickly! Upgrade to Tenant Sub now to claim your spot and earn monthly referral income.');
-      }
-    } catch (signInErr: any) {
-      if (
-        signInErr?.code === 'auth/user-not-found' ||
-        signInErr?.code === 'auth/invalid-credential'
-      ) {
         try {
-          const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-          try {
-            await sendEmailVerification(cred.user);
-          } catch {
-            // non-fatal
-          }
-          const isMain = email.trim().toLowerCase() === MAIN_TENANT_EMAIL;
-          setAuthModalOpen(false);
-          setPassword('');
-          setActiveTab(isMain ? 'tenant' : 'gigs');
-          if (!isMain) {
+          const uSnap = await getDoc(doc(db, 'users', cred.user.uid));
+          const uData = uSnap.exists() ? uSnap.data() : null;
+          const uTier = uData?.subscriptionTier;
+          const uStatus = uData?.subscriptionStatus;
+          if (!uTier || uTier === 'none' || uStatus === 'rejected') {
             setUpgradeModalOpen(true);
-            setAppNotice('Welcome! Hurry: Tenant spots are running out quickly. Secure your Tenant Sub now before spots fill up!');
           }
-        } catch (createErr: any) {
-          setAuthError(createErr?.message || 'Unable to sign in with email. Please use Continue with Google.');
+        } catch {
+          // keep directed to GiGs
         }
-      } else {
-        setAuthError(signInErr?.message || 'Unable to sign in. Please use Continue with Google.');
       }
+    } catch {
+      setAuthError('Incorrect email or password. New referral or new user? Switch to Sign Up and accept the Terms & Conditions.');
     } finally {
       setIsAuthLoading(false);
     }
@@ -3265,18 +3508,45 @@ export default function App() {
 
   const handleGoogleSignIn = async () => {
     setAuthError(null);
+    if (authTab === 'signup' && !acceptedTerms) {
+      setAuthError('Please accept the Terms and Conditions before signing up with Google.');
+      return;
+    }
     setIsAuthLoading(true);
+    if (authTab === 'signup') {
+      pendingTermsAcceptedAtRef.current = Date.now();
+    }
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       const signedEmail = (result.user.email || '').trim().toLowerCase();
       const isMain = signedEmail === MAIN_TENANT_EMAIL;
       setAuthModalOpen(false);
-      setActiveTab(isMain ? 'tenant' : 'gigs');
+      setStartupSubChooserDismissed(true);
+      setActiveTab('gigs');
+      pendingAuthSubTierRef.current = null;
       if (!isMain) {
-        setAppNotice('Notice: Tenant spots are running out quickly! Upgrade to Tenant Sub now to claim your spot and earn monthly referral income.');
+        try {
+          const uSnap = await getDocFromServer(doc(db, 'users', result.user.uid));
+          const uData = uSnap.exists() ? uSnap.data() : null;
+          const uTier = uData?.subscriptionTier;
+          const uStatus = uData?.subscriptionStatus;
+          const isNewOrUnsubscribed = !uData || !uTier || uTier === 'none';
+          if (authTab === 'signup' && isNewOrUnsubscribed) {
+            setCongratsModalOpen(true);
+          } else if (isNewOrUnsubscribed || uStatus === 'rejected') {
+            setUpgradeModalOpen(true);
+          }
+        } catch {
+          if (authTab === 'signup') {
+            setCongratsModalOpen(true);
+          } else {
+            setUpgradeModalOpen(true);
+          }
+        }
       }
     } catch (err: any) {
+      pendingTermsAcceptedAtRef.current = null;
       setAuthError(err?.message || 'Google sign-in was cancelled or blocked.');
     } finally {
       setIsAuthLoading(false);
@@ -3291,9 +3561,11 @@ export default function App() {
     }
     setCurrentUser(null);
     setIsAuthenticated(false);
+    setUserProfileLoaded(false);
     setIsMainTenant(false);
     setMyReferralCode('');
-    setActiveTab(null);
+    setActiveTab('gigs');
+    setStartupSubChooserDismissed(false);
     setChosenSubscription(null);
     setSubmissions([]);
     setTenantMenuOpen(false);
@@ -3301,16 +3573,48 @@ export default function App() {
     setCompanyGadgetOpen(false);
     setNavigatingCompany(null);
     stopLadyVoiceGuidance();
+    setFirstName('');
+    setLastName('');
+    setLocationInput('');
+    setContactInfo('');
+    setProfileSuccessMsg(null);
     setAppNotice(null);
+    setAcceptedTerms(false);
+    setTermsDetailsOpen(false);
+    setCongratsModalOpen(false);
+    setUpgradeModalOpen(false);
+    setOnboardingModalOpen(false);
+    setStartupIntentOpen(false);
+    setStartupIntentChoice(null);
+    setHasCompletedStartupIntent(true);
+    setAuthError(null);
+    setAuthTab('signup');
+    setAuthModalOpen(true);
   };
 
-  const handleSelectSubTier = async (tier: SubTierOption) => {
-    if (!currentUser) {
+  const handleSelectSubTier = async (tier: SubTierOption, overrideUser?: FirebaseUser | null) => {
+    const activeUser = overrideUser || currentUser;
+    if (!activeUser) {
+      pendingAuthSubTierRef.current = tier;
       setUpgradeModalOpen(false);
+      setStartupSubChooserDismissed(true);
       setAuthModalOpen(true);
       return;
     }
     const nextChosen = getSubCategory(tier);
+    if (isSubscriptionLocked && nextChosen !== chosenSubscription) {
+      setAppNotice('You cannot switch subscriptions while your current subscription is active. You can choose again when it ends.');
+      return;
+    }
+    if (
+      isSubscriptionLocked &&
+      nextChosen === chosenSubscription &&
+      (mySubmissionStatus !== 'none' || hasActiveTrial)
+    ) {
+      setUpgradeModalOpen(false);
+      setAppNotice('Your current subscription is already active. You can choose a new plan once it ends.');
+      return;
+    }
     if (
       nextChosen === 'tenant' &&
       offerConfig.maxTenantSignups > 0 &&
@@ -3338,26 +3642,27 @@ export default function App() {
 
     setSelectedSubTier(tier);
     setChosenSubscription(nextChosen);
-    if (isSubscriptionActive) {
-      if (nextChosen === 'tenant' && activeTab === 'profile') {
-        setActiveTab('tenant');
-      } else if (nextChosen !== 'tenant' && activeTab === 'tenant') {
-        setActiveTab('profile');
-      }
-    } else {
-      setActiveTab('gigs');
-    }
+    setActiveTab('gigs');
 
     try {
-      await updateDoc(doc(db, 'users', currentUser.uid), {
+      await updateDoc(doc(db, 'users', activeUser.uid), {
         subscriptionTier: nextChosen,
       });
       if (myReferralCode && !isMainTenant) {
         await syncReferralLinkDoc(
-          currentUser,
+          activeUser,
           myReferralCode,
           nextChosen === 'tenant' ? 'tenant' : 'user',
-          `${firstName || currentUser.displayName || 'Member'} ${lastName || ''}`.trim()
+          `${firstName || activeUser.displayName || 'Member'} ${lastName || ''}`.trim()
+        );
+      }
+      if (activeReferrer) {
+        const routing = resolveReferralRouting(activeReferrer, activeUser.uid);
+        await ensureSignupReferralSubmission(
+          activeUser,
+          routing,
+          tier,
+          `${firstName || activeUser.displayName || ''} ${lastName || ''}`.trim() || undefined
         );
       }
     } catch (err) {
@@ -3365,6 +3670,7 @@ export default function App() {
     }
 
     setUpgradeModalOpen(false);
+    setStartupSubChooserDismissed(true);
     setOnboardingModalOpen(true);
     setSelfieCaptured(false);
     setSelfieDataUrl(null);
@@ -3450,9 +3756,9 @@ export default function App() {
         bankBranchCode: cleanBankBranch,
         bankReferenceNote: cleanBankRefNote,
         approvalHoursEnabled: draftApprovalHoursEnabled,
-        approvalHoursStart: draftApprovalHoursStart,
-        approvalHoursEnd: draftApprovalHoursEnd,
-        approvalWorkingDays: draftApprovalWorkingDays,
+        approvalHoursStart: /^\d:\d\d$/.test(draftApprovalHoursStart.trim()) ? `0${draftApprovalHoursStart.trim()}` : (draftApprovalHoursStart.trim() || '08:00'),
+        approvalHoursEnd: /^\d:\d\d$/.test(draftApprovalHoursEnd.trim()) ? `0${draftApprovalHoursEnd.trim()}` : (draftApprovalHoursEnd.trim() || '17:00'),
+        approvalWorkingDays: (draftApprovalWorkingDays || '').trim(),
       };
       const payload: Record<string, unknown> = {
         code: myReferralCode,
@@ -3469,10 +3775,10 @@ export default function App() {
         bankAccountNumber: cleanBankNumber,
         bankBranchCode: cleanBankBranch,
         bankReferenceNote: cleanBankRefNote,
-        approvalHoursEnabled: draftApprovalHoursEnabled,
-        approvalHoursStart: draftApprovalHoursStart,
-        approvalHoursEnd: draftApprovalHoursEnd,
-        approvalWorkingDays: draftApprovalWorkingDays,
+        approvalHoursEnabled: updatedCfg.approvalHoursEnabled,
+        approvalHoursStart: updatedCfg.approvalHoursStart,
+        approvalHoursEnd: updatedCfg.approvalHoursEnd,
+        approvalWorkingDays: updatedCfg.approvalWorkingDays,
         updatedAt: Date.now(),
       };
       if (isMainTenant) {
@@ -3777,11 +4083,11 @@ export default function App() {
       setAppNotice(
         mySubmissionStatus === 'frozen'
           ? 'Your referral account has been frozen by your tenant.'
-          : mySubmissionStatus === 'pending'
-          ? 'Your account is inactive until approved by your referred tenant.'
-          : 'Your account is inactive. Choose a subscription via Upgrade and await referred tenant approval.'
+          : isSubscriptionEnded
+          ? 'Your subscription has ended. Choose a subscription plan to activate again.'
+          : 'Your account is inactive. Choose a subscription plan to unlock creating gigs.'
       );
-      if (mySubmissionStatus !== 'pending' && mySubmissionStatus !== 'frozen') {
+      if (mySubmissionStatus !== 'frozen') {
         setUpgradeModalOpen(true);
       }
       return;
@@ -3967,11 +4273,11 @@ export default function App() {
       setAppNotice(
         mySubmissionStatus === 'frozen'
           ? 'Your referral account has been frozen by your tenant.'
-          : mySubmissionStatus === 'pending'
-          ? 'Your account is inactive until approved by your referred tenant.'
-          : 'Your account is inactive. Choose a subscription via Upgrade and await referred tenant approval.'
+          : isSubscriptionEnded
+          ? 'Your subscription has ended. Choose a subscription plan to activate again.'
+          : 'Your account is inactive. Choose a subscription plan to unlock adding companies.'
       );
-      if (mySubmissionStatus !== 'pending' && mySubmissionStatus !== 'frozen') {
+      if (mySubmissionStatus !== 'frozen') {
         setUpgradeModalOpen(true);
       }
       return;
@@ -4703,25 +5009,67 @@ export default function App() {
     }
   };
 
-  // Dark Grey & Blurry Floating Tools Wallpaper Component
-  const FloatingToolsWallpaper = ({ opacity = 'opacity-25', isDark = true }: { opacity?: string; isDark?: boolean } = {}) => (
-    <div className={`absolute inset-0 overflow-hidden pointer-events-none ${opacity} blur-[2px]`}>
-      <div className="absolute top-10 left-12 animate-bounce duration-1000"><Wrench className={`h-10 w-10 ${isDark ? 'text-blue-400' : 'text-blue-500'}`} /></div>
-      <div className="absolute bottom-16 right-16 animate-pulse"><Hammer className={`h-12 w-12 ${isDark ? 'text-indigo-400' : 'text-indigo-500'}`} /></div>
-      <div className="absolute top-1/3 right-1/4 animate-bounce"><Zap className={`h-9 w-9 ${isDark ? 'text-emerald-400' : 'text-emerald-500'}`} /></div>
-      <div className="absolute bottom-1/4 left-1/5 animate-pulse"><Sparkles className={`h-10 w-10 ${isDark ? 'text-amber-400' : 'text-amber-500'}`} /></div>
-      <div className="absolute top-1/4 left-1/3 animate-bounce"><Users className={`h-10 w-10 ${isDark ? 'text-purple-400' : 'text-purple-500'}`} /></div>
-      <div className="absolute bottom-12 left-1/2 animate-pulse"><Building2 className={`h-14 w-14 ${isDark ? 'text-cyan-400' : 'text-cyan-500'}`} /></div>
-      <div className="absolute top-1/2 right-10 animate-bounce"><Compass className={`h-9 w-9 ${isDark ? 'text-rose-400' : 'text-rose-500'}`} /></div>
-      <div className="absolute top-12 right-1/3 animate-pulse"><Layers className={`h-8 w-8 ${isDark ? 'text-teal-400' : 'text-teal-500'}`} /></div>
-      <div className="absolute bottom-1/3 left-10 animate-bounce"><Briefcase className={`h-10 w-10 ${isDark ? 'text-violet-400' : 'text-violet-500'}`} /></div>
-      <div className="absolute top-2/3 right-1/2 animate-pulse"><Shield className={`h-9 w-9 ${isDark ? 'text-sky-400' : 'text-sky-500'}`} /></div>
-      <div className="absolute top-8 right-8 animate-bounce"><Star className={`h-8 w-8 ${isDark ? 'text-yellow-400' : 'text-yellow-500'}`} /></div>
-    </div>
-  );
+  // Blurry Light Grey Background Wallpaper with 3D Random Gadget Tools Floating Around
+  const FloatingToolsWallpaper = ({ opacity = 'opacity-90' }: { opacity?: string; isDark?: boolean } = {}) => {
+    const gadgetNodes: Array<{
+      Icon: React.ComponentType<{ className?: string }>;
+      pos: string;
+      anim: string;
+      color: string;
+      size: string;
+      box: string;
+    }> = [
+      { Icon: Wrench, pos: 'top-[6%] left-[5%]', anim: 'animate-float-3d-a', color: 'text-blue-600', size: 'h-7 w-7 sm:h-8 sm:w-8', box: 'p-3.5 sm:p-4' },
+      { Icon: Hammer, pos: 'bottom-[14%] right-[7%]', anim: 'animate-float-3d-b', color: 'text-indigo-600', size: 'h-8 w-8 sm:h-9 sm:w-9', box: 'p-4' },
+      { Icon: Smartphone, pos: 'top-[14%] right-[12%]', anim: 'animate-float-3d-c', color: 'text-sky-600', size: 'h-7 w-7', box: 'p-3.5' },
+      { Icon: Compass, pos: 'bottom-[24%] left-[8%]', anim: 'animate-float-3d-b', color: 'text-rose-600', size: 'h-7 w-7', box: 'p-3.5' },
+      { Icon: Camera, pos: 'top-[28%] left-[18%]', anim: 'animate-float-3d-c', color: 'text-violet-600', size: 'h-6 w-6', box: 'p-3' },
+      { Icon: Satellite, pos: 'top-[22%] right-[26%]', anim: 'animate-float-3d-a', color: 'text-cyan-600', size: 'h-7 w-7', box: 'p-3.5' },
+      { Icon: Zap, pos: 'bottom-[34%] right-[19%]', anim: 'animate-float-3d-a', color: 'text-amber-600', size: 'h-6 w-6', box: 'p-3' },
+      { Icon: Settings, pos: 'top-[48%] left-[4%]', anim: 'animate-float-3d-c', color: 'text-slate-700', size: 'h-7 w-7', box: 'p-3.5' },
+      { Icon: Briefcase, pos: 'bottom-[9%] left-[24%]', anim: 'animate-float-3d-a', color: 'text-emerald-600', size: 'h-7 w-7', box: 'p-3.5' },
+      { Icon: Navigation, pos: 'top-[44%] right-[5%]', anim: 'animate-float-3d-b', color: 'text-teal-600', size: 'h-7 w-7', box: 'p-3.5' },
+      { Icon: MapPin, pos: 'bottom-[44%] left-[28%]', anim: 'animate-float-3d-b', color: 'text-red-500', size: 'h-6 w-6', box: 'p-3' },
+      { Icon: Layers, pos: 'top-[10%] left-[42%]', anim: 'animate-float-3d-c', color: 'text-indigo-500', size: 'h-6 w-6', box: 'p-3' },
+      { Icon: Globe, pos: 'bottom-[10%] left-[52%]', anim: 'animate-float-3d-c', color: 'text-blue-500', size: 'h-7 w-7', box: 'p-3.5' },
+      { Icon: Shield, pos: 'top-[62%] right-[32%]', anim: 'animate-float-3d-a', color: 'text-emerald-700', size: 'h-6 w-6', box: 'p-3' },
+      { Icon: Store, pos: 'top-[72%] left-[14%]', anim: 'animate-float-3d-b', color: 'text-orange-600', size: 'h-6 w-6', box: 'p-3' },
+      { Icon: Sparkles, pos: 'top-[68%] right-[8%]', anim: 'animate-float-3d-c', color: 'text-amber-500', size: 'h-6 w-6', box: 'p-3' },
+    ];
+
+    return (
+      <div className={`fixed inset-0 overflow-hidden pointer-events-none select-none blur-[4px] scale-105 ${opacity}`}>
+        <div className="absolute -top-24 -left-24 h-80 w-80 rounded-full bg-white/60 blur-3xl" />
+        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-slate-400/25 blur-3xl" />
+        {gadgetNodes.map(({ Icon, pos, anim, color, size, box }, idx) => (
+          <div key={idx} className={`absolute ${pos} ${anim}`}>
+            <div
+              className={`${box} rounded-2xl bg-gradient-to-br from-white via-gray-100 to-gray-300 border-t border-l border-white/95 border-b-[4px] border-r-[3px] border-b-slate-400/75 border-r-slate-300/80 shadow-[0_14px_26px_-8px_rgba(15,23,42,0.22),inset_0_1px_0_rgba(255,255,255,0.95)]`}
+            >
+              <Icon className={`${size} ${color} drop-shadow-[0_2px_3px_rgba(15,23,42,0.18)]`} />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden m-0 p-0 font-sans bg-white">
+    <div className="relative h-dvh w-screen overflow-hidden m-0 p-0 font-sans bg-gray-200">
+      {/* 5-Second Intro Splash Screen: TimeGiG Displayed Over Light Grey 3D Gadget Tools Wallpaper */}
+      {showSplash && (
+        <div className="fixed inset-0 z-[9999] bg-gradient-to-br from-gray-100 via-gray-200 to-slate-300 flex flex-col items-center justify-center select-none overflow-hidden animate-in fade-in duration-300">
+          <FloatingToolsWallpaper opacity="opacity-95" />
+          <div className="relative z-10 flex flex-col items-center justify-center text-center px-6">
+            <h1 className="text-6xl sm:text-7xl md:text-8xl font-black tracking-tight text-slate-900 drop-shadow-[0_10px_24px_rgba(15,23,42,0.18)] font-sans">
+              TimeGiG
+            </h1>
+          </div>
+        </div>
+      )}
+
+
+
       {/* Fullscreen Map */}
       <div ref={mapRef} className="absolute inset-0 h-full w-full z-0" />
 
@@ -4736,466 +5084,421 @@ export default function App() {
         </div>
       )}
 
-      {/* Referrals Feature View (Sketch Layout: Pill Search Bar + Circular-Avatar Capsule Rows) */}
-      {activeTab === 'referrals' && (
-        <div className="fixed inset-x-0 top-0 bottom-12 z-20 bg-zinc-900/90 backdrop-blur-2xl flex flex-col items-center p-5 text-slate-900 overflow-y-auto">
-          <FloatingToolsWallpaper />
+      {/* Referrals Feature View (Search Bar at Top + All Direct & User Sub Referrals) */}
+      {activeTab === 'referrals' && (() => {
+        const fullSubUserIds = new Set(
+          submissions
+            .filter((s) => !s.id.startsWith('sub-ref-') || Boolean(s.idDoc || s.popDoc))
+            .map((s) => s.userId)
+        );
+        const visibleSubmissions = submissions.filter(
+          (s) => !s.id.startsWith('sub-ref-') || Boolean(s.idDoc || s.popDoc) || !fullSubUserIds.has(s.userId)
+        );
+        const q = referralQuery.trim().toLowerCase();
+        const filteredReferrals = visibleSubmissions.filter((sub) => {
+          if (referralStatusFilter !== 'all' && sub.status !== referralStatusFilter) {
+            return false;
+          }
+          if (!q) return true;
+          return (
+            (sub.userName || '').toLowerCase().includes(q) ||
+            (sub.userEmail || '').toLowerCase().includes(q) ||
+            (sub.subType || '').toLowerCase().includes(q) ||
+            (sub.status || '').toLowerCase().includes(q) ||
+            (sub.referrerCode || '').toLowerCase().includes(q) ||
+            (sub.routingLabel || '').toLowerCase().includes(q)
+          );
+        });
 
-          <div className="relative z-10 w-full max-w-lg mt-2 space-y-3.5">
-            {/* Top Pill Search Bar + Referrals Info Icon */}
-            <div className="flex items-center gap-2 w-full">
-              <div className="relative flex-1 flex items-center rounded-full bg-white shadow-xl border border-slate-200 px-4 py-3 text-slate-900">
-                <Search className="h-5 w-5 text-slate-400 mr-3 shrink-0" />
+        return (
+          <div className="fixed inset-0 z-35 bg-gradient-to-br from-gray-100/95 via-gray-200/95 to-slate-300/95 backdrop-blur-2xl flex flex-col text-slate-900 overflow-y-auto pb-28">
+            <FloatingToolsWallpaper opacity="opacity-85" />
+
+            {/* Sticky Top Bar + Search Bar */}
+            <div className="relative z-10 max-w-3xl mx-auto w-full px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b border-slate-300/80 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-600/20 flex items-center justify-center">
+                    <Share2 className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h2 className="text-base sm:text-lg font-black text-slate-900">
+                      {isMainTenant ? 'Referrals' : 'Tenant Referrals'}
+                    </h2>
+                    <p className="text-[11px] text-slate-600">
+                      {isMainTenant
+                        ? `${visibleSubmissions.length} ${visibleSubmissions.length === 1 ? 'referral' : 'referrals'} (direct & User Sub referrals) • View, approve & reject`
+                        : `${visibleSubmissions.length} total ${visibleSubmissions.length === 1 ? 'referral' : 'referrals'} • View, approve & reject`}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClickSound();
+                    setActiveTab('gigs');
+                  }}
+                  className="min-h-[44px] min-w-[44px] p-2.5 rounded-2xl bg-white/90 hover:bg-white text-slate-700 border border-slate-300/80 shadow-sm flex items-center justify-center transition"
+                  title="Close to Map"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Search Bar at Top */}
+              <div className="relative flex items-center">
+                <Search className="absolute left-3.5 h-4 w-4 text-slate-500 pointer-events-none" />
                 <input
                   type="text"
                   value={referralQuery}
                   onChange={(e) => setReferralQuery(e.target.value)}
-                  placeholder="Search referrals..."
-                  className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 focus:outline-none"
+                  placeholder="Search referrals by name, email, tier, status, or code..."
+                  className="w-full rounded-2xl bg-white/95 border border-slate-300 py-2.5 pl-10 pr-9 text-xs text-slate-900 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-600 transition"
                 />
+                {referralQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setReferralQuery('')}
+                    className="absolute right-3 text-slate-500 hover:text-slate-900"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  playClickSound();
-                  setFeatureInfoTab('referrals');
-                }}
-                aria-label="Referrals Information"
-                className="h-11 w-11 rounded-full bg-white/95 border border-blue-200 shadow-xl text-blue-600 hover:bg-blue-600 hover:text-white hover:border-blue-600 flex items-center justify-center shrink-0 transition active:scale-95"
-                title="Referrals Info"
-              >
-                <div className="h-6 w-6 rounded-full bg-blue-50 text-current flex items-center justify-center">
-                  <Info className="h-4 w-4" />
-                </div>
-              </button>
+
+              {/* Status Filter Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                {(
+                  [
+                    { id: 'all', label: `All (${visibleSubmissions.length})` },
+                    { id: 'pending', label: `Pending (${visibleSubmissions.filter((s) => s.status === 'pending').length})` },
+                    { id: 'approved', label: `Approved (${visibleSubmissions.filter((s) => s.status === 'approved').length})` },
+                    { id: 'rejected', label: `Rejected (${visibleSubmissions.filter((s) => s.status === 'rejected').length})` },
+                    { id: 'frozen', label: `Frozen (${visibleSubmissions.filter((s) => s.status === 'frozen').length})` },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      setReferralStatusFilter(tab.id);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition ${
+                      referralStatusFilter === tab.id
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'bg-white/85 text-slate-700 border border-slate-300 hover:bg-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {isMainTenant && currentUser && !currentUser.emailVerified && (
-              <div className="rounded-3xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center justify-between gap-3 text-xs text-amber-900 shadow-sm">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-                  <span>Verify email or sign in with Google for Main Tenant review access.</span>
-                </div>
-                <button
-                  onClick={() => sendEmailVerification(currentUser).then(() => setAppNotice('Verification email sent to timegig2026@gmail.com.'))}
-                  className="px-3 py-1 rounded-full bg-amber-600 text-white font-bold shrink-0 hover:bg-amber-500 transition"
-                >
-                  Verify
-                </button>
-              </div>
-            )}
-
-            {/* Compact Profit & Count Pill Summary for Tenants */}
-            {(isMainTenant || chosenSubscription === 'tenant') && (
-              <div className="flex items-center justify-between px-3 text-[11px] font-bold text-zinc-200 gap-2">
-                <span className="truncate">
-                  Tenants: {submissions.filter((s) => getSubCategory(s.subType) === 'tenant').length} • Users:{' '}
-                  {submissions.filter((s) => getSubCategory(s.subType) === 'user').length} • Companies:{' '}
-                  {submissions.filter((s) => getSubCategory(s.subType) === 'company').length}
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/40 shrink-0">
-                  Monthly Profit: R{totalProfit.toFixed(2)}
-                </span>
-              </div>
-            )}
-
-            {/* Stacked Pill Rows with Circular Avatars (Separated: Referral Tenants, User Subs, Company Subs) */}
-            {!isMainTenant && chosenSubscription !== 'tenant' ? (
-              <div className="rounded-full bg-white border border-slate-200 shadow-lg px-4 py-3 flex items-center gap-3.5">
-                <div className="h-11 w-11 rounded-full bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                  <Share2 className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-xs font-bold text-slate-900 truncate">
-                    {chosenSubscription === 'user' || chosenSubscription === 'company'
-                      ? `${chosenSubscription === 'company' ? 'Company' : 'User'} Sub Referral Active`
-                      : 'No Tenant Tier Active'}
-                  </h4>
-                  <p className="text-[11px] text-slate-500 truncate">
-                    {chosenSubscription === 'user' || chosenSubscription === 'company'
-                      ? `Referrals from your ${chosenSubscription === 'company' ? 'Company' : 'User'} Sub link route under timegig2026@gmail.com`
-                      : 'Select Tenant Sub via Upgrade to review referrals'}
+            {/* Referrals Body */}
+            <div className="relative z-10 max-w-3xl mx-auto w-full px-4 sm:px-6 py-4 space-y-3">
+              {filteredReferrals.length === 0 ? (
+                <div className="rounded-3xl bg-white/95 border border-slate-200 shadow-lg p-8 text-center space-y-3">
+                  <Share2 className="h-10 w-10 text-emerald-600 mx-auto" />
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {visibleSubmissions.length === 0 ? 'No Tenant Referrals Yet' : 'No Matching Referrals Found'}
+                  </h3>
+                  <p className="text-xs text-slate-600 max-w-md mx-auto">
+                    {visibleSubmissions.length === 0
+                      ? 'Share your referral link to invite subscribers. All Tenant and User Sub referrals routed to you will appear here for review.'
+                      : 'Try clearing your search query or selecting another status filter.'}
                   </p>
+                  {visibleSubmissions.length === 0 && myReferralCode && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const link = `${window.location.origin}?ref=${myReferralCode}`;
+                        handleCopy(link, 'referrals-empty-copy');
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      <span>{copiedLink === 'referrals-empty-copy' ? 'Referral Link Copied!' : 'Copy Referral Link'}</span>
+                    </button>
+                  )}
                 </div>
-              </div>
-            ) : (
-              (() => {
-                const filteredSubmissions = submissions.filter((sub) => {
-                  if (!referralQuery.trim()) return true;
-                  const q = referralQuery.toLowerCase();
-                  return (
-                    sub.userName.toLowerCase().includes(q) ||
-                    sub.userEmail.toLowerCase().includes(q) ||
-                    sub.subType.toLowerCase().includes(q) ||
-                    sub.status.toLowerCase().includes(q)
-                  );
-                });
-                const referralTenantSubs = filteredSubmissions.filter(
-                  (sub) => getSubCategory(sub.subType) === 'tenant'
-                );
-                const userSubReferrals = filteredSubmissions.filter(
-                  (sub) => getSubCategory(sub.subType) === 'user'
-                );
-                const companySubReferrals = filteredSubmissions.filter(
-                  (sub) => getSubCategory(sub.subType) === 'company'
-                );
-
-                const renderSubmissionRow = (sub: Submission) => {
-                  const initials =
-                    sub.userName
-                      .split(' ')
-                      .map((p) => p[0])
-                      .join('')
-                      .slice(0, 2)
-                      .toUpperCase() || 'U';
+              ) : (
+                filteredReferrals.map((sub) => {
                   const expiryInfo = getSubscriptionExpiryState(sub);
-                  const isReferrerDecisionAllowed = canDecideSubmission(sub);
-                  const subCat = getSubCategory(sub.subType);
-                  const feeVal =
+                  const canDecide = canDecideSubmission(sub);
+                  const subFee =
                     typeof sub.feeAmount === 'number'
                       ? sub.feeAmount
-                      : subCat === 'tenant'
+                      : getSubCategory(sub.subType) === 'tenant'
                       ? myTenantConfig.tenantFee
-                      : subCat === 'company'
+                      : getSubCategory(sub.subType) === 'company'
                       ? myTenantConfig.companyFee
                       : myTenantConfig.userFee;
-                  const subLabel =
-                    subCat === 'tenant' ? 'Tenant Sub' : subCat === 'company' ? 'Company Sub' : 'User Sub';
 
                   return (
                     <div
                       key={sub.id}
-                      onClick={() => setViewingSubmission(sub)}
-                      className={`cursor-pointer rounded-full px-3 py-2.5 flex items-center gap-3 transition shadow-lg ${
-                        expiryInfo.isRedAlert
-                          ? 'bg-rose-50 border-2 border-rose-500 shadow-rose-500/15 hover:border-rose-600'
-                          : 'bg-white border border-slate-200 hover:border-blue-300 hover:shadow-xl'
+                      className={`rounded-2xl bg-white/95 border p-4 shadow-lg space-y-3 transition ${
+                        expiryInfo.isRedAlert ? 'border-rose-400' : 'border-slate-200 hover:border-slate-300'
                       }`}
                     >
-                      {/* Circular Avatar (Selfie or Initials) */}
-                      <div
-                        className={`h-11 w-11 rounded-full overflow-hidden flex items-center justify-center shrink-0 text-xs font-black ${
-                          expiryInfo.isRedAlert
-                            ? 'bg-rose-100 border-2 border-rose-500 text-rose-700'
-                            : 'bg-slate-100 border border-slate-200 text-slate-700'
-                        }`}
-                      >
-                        {sub.selfie && sub.selfie.startsWith('data:image') ? (
-                          <img src={sub.selfie} alt={sub.userName} className="h-full w-full object-cover" />
-                        ) : (
-                          <span>{initials}</span>
-                        )}
-                      </div>
-
-                      {/* Referral Details */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <h4
-                            className={`font-bold text-xs truncate ${
-                              expiryInfo.isRedAlert ? 'text-rose-900' : 'text-slate-900'
-                            }`}
-                          >
-                            {sub.userName}
-                          </h4>
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[9px] font-bold shrink-0 ${
-                              expiryInfo.isRedAlert
-                                ? 'bg-rose-600 text-white'
-                                : sub.status === 'approved'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : sub.status === 'frozen'
-                                ? 'bg-sky-100 text-sky-700'
-                                : sub.status === 'rejected'
-                                ? 'bg-rose-100 text-rose-700'
-                                : 'bg-amber-100 text-amber-700'
-                            }`}
-                          >
-                            {expiryInfo.isRedAlert
-                              ? expiryInfo.badgeLabel
-                              : sub.status.toUpperCase()}
-                          </span>
-                        </div>
-                        <p
-                          className={`text-[11px] truncate ${
-                            expiryInfo.isRedAlert ? 'text-rose-700 font-semibold' : 'text-slate-500'
-                          }`}
-                        >
-                          {subLabel} (R{feeVal.toFixed(2)})
-                          {expiryInfo.isRedAlert
-                            ? ' • Referrer decision needed'
-                            : expiryInfo.badgeLabel
-                            ? ` • ${expiryInfo.badgeLabel}`
-                            : ''}{' '}
-                          • {sub.userEmail}
-                        </p>
-                      </div>
-
-                      {/* Compact Circular Actions (Only Referrer Tenant can decide) */}
-                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => setViewingSubmission(sub)}
-                          title="View Selfie & Docs"
-                          className="h-8 w-8 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 flex items-center justify-center transition"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </button>
-                        {isReferrerDecisionAllowed && sub.status === 'pending' && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleApproveSubmission(sub)}
-                              title="Approve"
-                              className="h-8 w-8 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center transition shadow-sm"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRejectSubmission(sub)}
-                              title="Reject"
-                              className="h-8 w-8 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center transition shadow-sm"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </>
-                        )}
-                        {isReferrerDecisionAllowed && sub.status === 'approved' && (
-                          <>
-                            {expiryInfo.isRedAlert && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    playClickSound();
-                                    handleExtendSubmission(sub, 30);
-                                  }}
-                                  title="Renew Subscription (+30 Days)"
-                                  className="h-8 w-8 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center transition shadow-sm"
-                                >
-                                  <Plus className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    playClickSound();
-                                    handleRejectSubmission(sub);
-                                  }}
-                                  title="End / Reject Subscription"
-                                  className="h-8 w-8 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center transition shadow-sm"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                playClickSound();
-                                handleFreezeSubmission(sub);
-                              }}
-                              title="Freeze Referral Account"
-                              className="h-8 w-8 rounded-full bg-sky-600 hover:bg-sky-500 text-white flex items-center justify-center transition shadow-sm"
-                            >
-                              <Snowflake className="h-3.5 w-3.5" />
-                            </button>
-                          </>
-                        )}
-                        {isReferrerDecisionAllowed && sub.status === 'frozen' && (
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
                           <button
                             type="button"
                             onClick={() => {
                               playClickSound();
-                              handleUnfreezeSubmission(sub);
+                              setViewingSubmission(sub);
                             }}
-                            title="Unfreeze Referral Account"
-                            className="h-8 w-8 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center transition shadow-sm"
+                            className="h-12 w-12 rounded-full overflow-hidden bg-slate-100 border-2 border-emerald-500/70 flex items-center justify-center shrink-0 hover:scale-105 transition"
+                            title="Inspect Selfie & Documents"
                           >
-                            <Check className="h-3.5 w-3.5" />
+                            {sub.selfie && sub.selfie.startsWith('data:image') ? (
+                              <img src={sub.selfie} alt={sub.userName} className="h-full w-full object-cover" />
+                            ) : (
+                              <User className="h-5 w-5 text-emerald-600" />
+                            )}
+                          </button>
+
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="text-sm font-bold text-slate-900 truncate">{sub.userName}</h3>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                                  sub.status === 'approved'
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                    : sub.status === 'rejected'
+                                    ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                    : sub.status === 'frozen'
+                                    ? 'bg-sky-100 text-sky-800 border border-sky-200'
+                                    : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                }`}
+                              >
+                                {sub.status}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 truncate">{sub.userEmail || 'No email'}</p>
+                            <div className="flex items-center gap-2 flex-wrap mt-1.5 text-[10px] text-slate-700">
+                              <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 font-semibold tabular-nums">
+                                {sub.subType} • R{subFee.toFixed(2)}
+                              </span>
+                              {sub.referrerTier === 'user' && (
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold">
+                                  Referred via User Sub
+                                </span>
+                              )}
+                              <span className="text-slate-500">
+                                {new Date(sub.submittedAt).toLocaleDateString()}
+                              </span>
+                              {sub.referrerCode && (
+                                <span className="font-mono text-emerald-700 font-semibold">Code: {sub.referrerCode}</span>
+                              )}
+                            </div>
+                            {sub.routingLabel && (
+                              <p className="text-[10px] text-slate-500 mt-1">{sub.routingLabel}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {expiryInfo.isRedAlert && (
+                        <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-1.5 text-[11px] text-rose-700 font-semibold flex items-center gap-1.5">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                          <span>
+                            {expiryInfo.isExpired
+                              ? 'Subscription has expired'
+                              : `Expires in ${expiryInfo.daysLeft} day${expiryInfo.daysLeft === 1 ? '' : 's'}`}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Action Buttons: View, Approve, Reject */}
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playClickSound();
+                            setViewingSubmission(sub);
+                          }}
+                          className="min-h-[40px] px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition"
+                        >
+                          <Eye className="h-3.5 w-3.5 text-sky-600" />
+                          <span>View</span>
+                        </button>
+
+                        {canDecide && sub.status !== 'approved' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              playClickSound();
+                              handleApproveSubmission(sub);
+                            }}
+                            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>Approve</span>
+                          </button>
+                        )}
+
+                        {canDecide && sub.status !== 'rejected' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              playClickSound();
+                              handleRejectSubmission(sub);
+                            }}
+                            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                            <span>Reject</span>
                           </button>
                         )}
                       </div>
                     </div>
                   );
-                };
-
-                const redTenantsCount = referralTenantSubs.filter(
-                  (s) => getSubscriptionExpiryState(s).isRedAlert
-                ).length;
-                const redUsersCount = userSubReferrals.filter(
-                  (s) => getSubscriptionExpiryState(s).isRedAlert
-                ).length;
-                const redCompaniesCount = companySubReferrals.filter(
-                  (s) => getSubscriptionExpiryState(s).isRedAlert
-                ).length;
-
-                return (
-                  <div className="space-y-5 pb-6">
-                    {/* Section 1: Referral Tenants */}
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between px-2">
-                        <div className="flex items-center gap-2">
-                          <span className="h-6 w-6 rounded-full bg-blue-500/25 text-blue-300 border border-blue-400/30 flex items-center justify-center">
-                            <Building2 className="h-3.5 w-3.5" />
-                          </span>
-                          <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-100">
-                            Referral Tenants ({referralTenantSubs.length})
-                          </h3>
-                        </div>
-                        {redTenantsCount > 0 && (
-                          <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-bold">
-                            {redTenantsCount} Ending Soon
-                          </span>
-                        )}
-                      </div>
-
-                      {referralTenantSubs.length === 0 ? (
-                        <div className="rounded-full bg-white border border-slate-200 shadow-md px-4 py-3 flex items-center gap-3.5">
-                          <div className="h-10 w-10 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center shrink-0">
-                            <Building2 className="h-4 w-4" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <h4 className="text-xs font-bold text-slate-800">No Referral Tenants Yet</h4>
-                            <p className="text-[11px] text-slate-500 truncate">
-                              Tenant Sub referrals using your link will appear here
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-2.5">{referralTenantSubs.map(renderSubmissionRow)}</div>
-                      )}
-                    </div>
-
-                    {/* Section 2: User Sub Referrals */}
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between px-2">
-                        <div className="flex items-center gap-2">
-                          <span className="h-6 w-6 rounded-full bg-emerald-500/25 text-emerald-300 border border-emerald-400/30 flex items-center justify-center">
-                            <Users className="h-3.5 w-3.5" />
-                          </span>
-                          <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-100">
-                            User Sub Referrals ({userSubReferrals.length})
-                          </h3>
-                        </div>
-                        {redUsersCount > 0 && (
-                          <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-bold">
-                            {redUsersCount} Ending Soon
-                          </span>
-                        )}
-                      </div>
-
-                      {userSubReferrals.length === 0 ? (
-                        <div className="rounded-full bg-white border border-slate-200 shadow-md px-4 py-3 flex items-center gap-3.5">
-                          <div className="h-10 w-10 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center shrink-0">
-                            <Users className="h-4 w-4" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <h4 className="text-xs font-bold text-slate-800">No User Sub Referrals Yet</h4>
-                            <p className="text-[11px] text-slate-500 truncate">
-                              User Sub referrals using your link will appear here
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-2.5">{userSubReferrals.map(renderSubmissionRow)}</div>
-                      )}
-                    </div>
-
-                    {/* Section 3: Company Sub Referrals */}
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between px-2">
-                        <div className="flex items-center gap-2">
-                          <span className="h-6 w-6 rounded-full bg-indigo-500/25 text-indigo-300 border border-indigo-400/30 flex items-center justify-center">
-                            <Store className="h-3.5 w-3.5" />
-                          </span>
-                          <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-100">
-                            Company Sub Referrals ({companySubReferrals.length})
-                          </h3>
-                        </div>
-                        {redCompaniesCount > 0 && (
-                          <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-bold">
-                            {redCompaniesCount} Ending Soon
-                          </span>
-                        )}
-                      </div>
-
-                      {companySubReferrals.length === 0 ? (
-                        <div className="rounded-full bg-white border border-slate-200 shadow-md px-4 py-3 flex items-center gap-3.5">
-                          <div className="h-10 w-10 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center shrink-0">
-                            <Store className="h-4 w-4" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <h4 className="text-xs font-bold text-slate-800">No Company Referrals Yet</h4>
-                            <p className="text-[11px] text-slate-500 truncate">
-                              Company Sub referrals using your link will appear here
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-2.5">{companySubReferrals.map(renderSubmissionRow)}</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()
-            )}
+                })
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
-      {/* Seekers Feature View (Offer Services, Search Seekers, Star Ratings & Hire Flow) */}
+      {/* Seekers Feature View (Search Bar at Top + Seekers Hiring Services to Users) */}
       {activeTab === 'seekers' && (
-        <div className="fixed inset-x-0 top-0 bottom-12 z-20 bg-zinc-900/90 backdrop-blur-2xl flex flex-col items-center p-5 text-slate-900 overflow-y-auto">
-          <FloatingToolsWallpaper />
+        <div className="fixed inset-0 z-35 bg-gradient-to-br from-gray-100/95 via-gray-200/95 to-slate-300/95 backdrop-blur-2xl flex flex-col text-slate-900 overflow-y-auto pb-28">
+          <FloatingToolsWallpaper opacity="opacity-85" />
 
-          <div className="relative z-10 w-full max-w-lg mt-2 space-y-3.5">
-            {/* Top Pill Search Bar + Seekers Info Icon */}
-            <div className="flex items-center gap-2 w-full">
-              <div className="relative flex-1 flex items-center rounded-full bg-white shadow-xl border border-slate-200 px-4 py-3 text-slate-900">
-                <Search className="h-5 w-5 text-slate-400 mr-3 shrink-0" />
-                <input
-                  type="text"
-                  value={seekerQuery}
-                  onChange={(e) => setSeekerQuery(e.target.value)}
-                  placeholder="Search seekers or services..."
-                  className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 focus:outline-none"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  playClickSound();
-                  setFeatureInfoTab('seekers');
-                }}
-                aria-label="Seekers Information"
-                className="h-11 w-11 rounded-full bg-white/95 border border-blue-200 shadow-xl text-blue-600 hover:bg-blue-600 hover:text-white hover:border-blue-600 flex items-center justify-center shrink-0 transition active:scale-95"
-                title="Seekers Info"
-              >
-                <div className="h-6 w-6 rounded-full bg-blue-50 text-current flex items-center justify-center">
-                  <Info className="h-4 w-4" />
+          {/* Sticky Top Bar + Search Bar */}
+          <div className="relative z-10 max-w-3xl mx-auto w-full px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b border-slate-300/80 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="h-10 w-10 rounded-xl bg-violet-600 text-white shadow-md shadow-violet-600/20 flex items-center justify-center">
+                  <UserSearch className="h-4 w-4" />
                 </div>
-              </button>
+                <div>
+                  <h2 className="text-base sm:text-lg font-black text-slate-900">Seekers Services</h2>
+                  <p className="text-[11px] text-slate-600">
+                    Browse seekers offering services for hire or offer your own service
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClickSound();
+                    startCamera();
+                  }}
+                  className="relative h-11 w-11 rounded-full border-2 border-violet-500 bg-white overflow-hidden flex items-center justify-center shadow-sm hover:scale-105 transition shrink-0"
+                  title={selfieDataUrl || myAvatarThumb ? 'Update Face Selfie' : 'Take Face Selfie'}
+                >
+                  {selfieDataUrl || myAvatarThumb || currentUser?.photoURL ? (
+                    <img
+                      src={selfieDataUrl || myAvatarThumb || currentUser?.photoURL || ''}
+                      alt="Your Face Selfie"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <Camera className="h-4 w-4 text-violet-600" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClickSound();
+                    setServiceEditorOpen((prev) => !prev);
+                  }}
+                  className={`min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                    serviceEditorOpen
+                      ? 'bg-violet-600 text-white shadow-md shadow-violet-600/25'
+                      : 'bg-white/90 hover:bg-white text-violet-700 border border-violet-300 shadow-sm'
+                  }`}
+                >
+                  <Briefcase className="h-3.5 w-3.5" />
+                  <span>{myServiceTitle ? 'My Service' : 'Offer Service'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClickSound();
+                    setActiveTab('gigs');
+                  }}
+                  className="min-h-[44px] min-w-[44px] p-2.5 rounded-2xl bg-white/90 hover:bg-white text-slate-700 border border-slate-300/80 shadow-sm flex items-center justify-center transition"
+                  title="Close to Map"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
-            {/* Offer Your Service Bar */}
-            {currentUser && (
-              <div className="rounded-3xl bg-white border border-slate-200 shadow-md p-3.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="h-9 w-9 rounded-full overflow-hidden bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center shrink-0">
-                      {myAvatarThumb && myAvatarThumb.startsWith('data:image') ? (
-                        <img src={myAvatarThumb} alt="Your Selfie" className="h-full w-full object-cover" />
+            {/* Search Bar at Top */}
+            <div className="relative flex items-center">
+              <Search className="absolute left-3.5 h-4 w-4 text-slate-500 pointer-events-none" />
+              <input
+                type="text"
+                value={seekerQuery}
+                onChange={(e) => setSeekerQuery(e.target.value)}
+                placeholder="Search seekers by service, skill, name, rate, or location..."
+                className="w-full rounded-2xl bg-white/95 border border-slate-300 py-2.5 pl-10 pr-9 text-xs text-slate-900 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-600 transition"
+              />
+              {seekerQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSeekerQuery('')}
+                  className="absolute right-3 text-slate-500 hover:text-slate-900"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="relative z-10 max-w-3xl mx-auto w-full px-4 sm:px-6 py-4 space-y-4">
+            {/* Collapsible My Service Editor for Seekers Hiring Their Services */}
+            {serviceEditorOpen && (
+              <form
+                onSubmit={handleSaveMyService}
+                className="rounded-3xl bg-white/95 border border-violet-200 shadow-xl p-5 space-y-3 text-xs"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-violet-600" />
+                    <span>List Your Service for Hire</span>
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setMyOfferingService((prev) => !prev)}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition ${
+                      myOfferingService
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-300'
+                    }`}
+                  >
+                    {myOfferingService ? 'Active for Hire' : 'Paused'}
+                  </button>
+                </div>
+
+                {/* Face Selfie Row in Service Editor */}
+                <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 border border-slate-200 p-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-12 w-12 rounded-full overflow-hidden bg-white border-2 border-violet-500 flex items-center justify-center shrink-0">
+                      {selfieDataUrl || myAvatarThumb || currentUser?.photoURL ? (
+                        <img
+                          src={selfieDataUrl || myAvatarThumb || currentUser?.photoURL || ''}
+                          alt="Your Face Selfie"
+                          className="h-full w-full object-cover"
+                        />
                       ) : (
-                        <User className="h-4 w-4" />
+                        <User className="h-5 w-5 text-violet-600" />
                       )}
                     </div>
                     <div className="min-w-0">
-                      <h4 className="text-xs font-bold text-slate-900 truncate">
-                        {myServiceTitle ? `Offering: ${myServiceTitle}` : 'Hire Out Your Service'}
-                      </h4>
+                      <p className="font-bold text-slate-900">Your Face Selfie</p>
                       <p className="text-[11px] text-slate-500 truncate">
-                        {myServiceRate ? `${myServiceRate} • ` : ''}
-                        {myServiceTitle && myOfferingService ? 'Visible in Seekers' : myServiceTitle ? 'Paused' : 'Create an offer to appear in Seekers'}
+                        {selfieDataUrl || myAvatarThumb
+                          ? 'Displayed on your Seekers card'
+                          : 'Take a face selfie so clients recognize you'}
                       </p>
                     </div>
                   </div>
@@ -5203,227 +5506,356 @@ export default function App() {
                     type="button"
                     onClick={() => {
                       playClickSound();
-                      setServiceEditorOpen((prev) => !prev);
+                      startCamera();
                     }}
-                    className="px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold transition shrink-0"
+                    className="min-h-[40px] px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold flex items-center gap-1.5 shrink-0 transition"
                   >
-                    {serviceEditorOpen ? 'Close' : myServiceTitle ? 'Edit Service' : 'Offer Service'}
+                    <Camera className="h-3.5 w-3.5" />
+                    <span>{selfieDataUrl || myAvatarThumb ? 'Retake' : 'Take Selfie'}</span>
                   </button>
                 </div>
 
-                {serviceEditorOpen && (
-                  <form onSubmit={handleSaveMyService} className="mt-3 pt-3 border-t border-slate-100 space-y-2.5 text-xs">
-                    <div className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="h-9 w-9 rounded-full overflow-hidden bg-blue-100 border border-blue-200 text-blue-700 flex items-center justify-center shrink-0">
-                          {myAvatarThumb && myAvatarThumb.startsWith('data:image') ? (
-                            <img src={myAvatarThumb} alt="Face Selfie" className="h-full w-full object-cover" />
-                          ) : (
-                            <Camera className="h-4 w-4" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-slate-800 text-[11px]">Face Selfie</p>
-                          <p className="text-[10px] text-slate-500 truncate">
-                            {myAvatarThumb ? 'Attached to your seeker card' : 'Capture selfie to display on Seekers'}
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          playClickSound();
-                          startCamera();
-                        }}
-                        className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold flex items-center gap-1 shrink-0 transition"
-                      >
-                        <Camera className="h-3 w-3" />
-                        <span>{myAvatarThumb ? 'Retake' : 'Take Selfie'}</span>
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        required
-                        value={myServiceTitle}
-                        onChange={(e) => setMyServiceTitle(e.target.value)}
-                        placeholder="Service (e.g. Plumber, Driver)"
-                        className="rounded-xl bg-slate-50 border border-slate-200 p-2 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      />
-                      <input
-                        type="text"
-                        required
-                        value={myServiceRate}
-                        onChange={(e) => setMyServiceRate(e.target.value)}
-                        placeholder="Rate (e.g. R150/hr)"
-                        className="rounded-xl bg-slate-50 border border-slate-200 p-2 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      />
-                    </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Service Title <span className="text-rose-500">*</span>
+                    </label>
                     <input
                       type="text"
-                      value={myServiceDescription}
-                      onChange={(e) => setMyServiceDescription(e.target.value)}
-                      placeholder="Short description of what you do..."
-                      className="w-full rounded-xl bg-slate-50 border border-slate-200 p-2 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      required
+                      value={myServiceTitle}
+                      onChange={(e) => setMyServiceTitle(e.target.value)}
+                      placeholder="e.g. Plumber, Electrician, Delivery, Cleaner"
+                      className="w-full rounded-xl bg-slate-50 border border-slate-300 p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-600"
                     />
-                    <div className="flex items-center justify-between">
-                      <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={myOfferingService}
-                          onChange={(e) => setMyOfferingService(e.target.checked)}
-                          className="rounded text-blue-600"
-                        />
-                        <span>Available for Hire</span>
-                      </label>
-                      <button
-                        type="submit"
-                        disabled={isSavingService}
-                        className="px-4 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition disabled:opacity-50"
-                      >
-                        {isSavingService ? 'Saving...' : 'Publish Service'}
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </div>
-            )}
-
-            {/* Stacked Pill Rows with Circular Face Selfies, Service, Star Ratings & Hire Action */}
-            <div className="space-y-3 pb-4">
-              {seekersList.filter((seeker) => {
-                if (seeker.offeringService === false) return false;
-                if (!seeker.serviceTitle || !seeker.serviceTitle.trim()) return false;
-                if (seeker.status === 'frozen' || seeker.status === 'rejected') return false;
-                if (!seekerQuery.trim()) return true;
-                const q = seekerQuery.toLowerCase();
-                return (
-                  seeker.displayName.toLowerCase().includes(q) ||
-                  seeker.location.toLowerCase().includes(q) ||
-                  (seeker.serviceTitle || '').toLowerCase().includes(q) ||
-                  seeker.tier.toLowerCase().includes(q)
-                );
-              }).length === 0 ? (
-                <div className="rounded-full bg-white border border-slate-200 shadow-md px-4 py-3 flex items-center gap-3.5">
-                  <div className="h-11 w-11 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center shrink-0">
-                    <Users className="h-5 w-5" />
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <h4 className="text-xs font-bold text-slate-800">No Seekers Offering Services Yet</h4>
-                    <p className="text-[11px] text-slate-500 truncate">
-                      Create and publish an Offer Service to appear in Seekers
-                    </p>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Service Rate / Price</label>
+                    <input
+                      type="text"
+                      value={myServiceRate}
+                      onChange={(e) => setMyServiceRate(e.target.value)}
+                      placeholder="e.g. R250/hr or R500 fixed"
+                      className="w-full rounded-xl bg-slate-50 border border-slate-300 p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-600"
+                    />
                   </div>
                 </div>
-              ) : (
-                seekersList
-                  .filter((seeker) => {
-                    if (seeker.offeringService === false) return false;
-                    if (!seeker.serviceTitle || !seeker.serviceTitle.trim()) return false;
-                    if (seeker.status === 'frozen' || seeker.status === 'rejected') return false;
-                    if (!seekerQuery.trim()) return true;
-                    const q = seekerQuery.toLowerCase();
-                    return (
-                      seeker.displayName.toLowerCase().includes(q) ||
-                      seeker.location.toLowerCase().includes(q) ||
-                      (seeker.serviceTitle || '').toLowerCase().includes(q) ||
-                      seeker.tier.toLowerCase().includes(q)
-                    );
-                  })
-                  .map((seeker) => {
-                    const initials = seeker.displayName
-                      .split(' ')
-                      .map((p) => p[0])
-                      .join('')
-                      .slice(0, 2)
-                      .toUpperCase() || 'S';
-                    const ratingInfo = seekerRatingsMap[seeker.uid];
-                    const isMe = currentUser?.uid === seeker.uid;
-                    const hasValidSelfie = Boolean(seeker.avatar && seeker.avatar.startsWith('data:image'));
 
-                    return (
-                      <div
-                        key={seeker.uid}
-                        className="rounded-full bg-white border border-slate-200 shadow-lg hover:border-blue-300 transition px-3 py-2.5 flex items-center gap-3"
-                      >
-                        {/* Circular Face Selfie Avatar */}
-                        <button
-                          type="button"
-                          disabled={!hasValidSelfie}
-                          onClick={() => {
-                            if (hasValidSelfie && seeker.avatar) {
-                              playClickSound();
-                              setLightboxDoc({
-                                title: `${seeker.displayName} — Face Selfie`,
-                                name: seeker.serviceTitle || 'Seeker Profile',
-                                url: seeker.avatar,
-                                isImage: true,
-                              });
-                            }
-                          }}
-                          title={hasValidSelfie ? 'Tap to view face selfie' : seeker.displayName}
-                          className={`h-12 w-12 rounded-full overflow-hidden flex items-center justify-center shrink-0 text-xs font-black ${
-                            hasValidSelfie
-                              ? 'border-2 border-blue-400 cursor-pointer hover:ring-2 hover:ring-blue-300'
-                              : 'bg-blue-50 border border-blue-100 text-blue-700 cursor-default'
-                          }`}
-                        >
-                          {hasValidSelfie && seeker.avatar ? (
-                            <img src={seeker.avatar} alt={seeker.displayName} className="h-full w-full object-cover" />
-                          ) : (
-                            <span>{initials}</span>
-                          )}
-                        </button>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Service Description</label>
+                  <textarea
+                    rows={2}
+                    value={myServiceDescription}
+                    onChange={(e) => setMyServiceDescription(e.target.value)}
+                    placeholder="Describe your experience, tools, and availability..."
+                    className="w-full rounded-xl bg-slate-50 border border-slate-300 p-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-600"
+                  />
+                </div>
 
-                        {/* Seeker & Service Info */}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <h4 className="font-bold text-slate-900 text-xs truncate">{seeker.displayName}</h4>
-                            {ratingInfo ? (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[9px] font-bold shrink-0">
-                                <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-500" />
-                                <span>{ratingInfo.avg.toFixed(1)}</span>
-                                <span className="text-amber-500">({ratingInfo.count})</span>
-                              </span>
-                            ) : (
-                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-500 shrink-0">
-                                New
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] font-semibold text-blue-700 truncate">
-                            {seeker.serviceTitle || 'General Services'}
-                            {seeker.serviceRate ? ` • ${seeker.serviceRate}` : ''}
-                          </p>
-                          <p className="text-[10px] text-slate-500 truncate flex items-center gap-1">
-                            <MapPin className="h-2.5 w-2.5 text-slate-400 shrink-0" />
-                            <span className="truncate">{seeker.location || 'Location not set'}</span>
-                          </p>
-                        </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setServiceEditorOpen(false)}
+                    className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingService}
+                    className="min-h-[40px] px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold shadow-md transition disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isSavingService && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    <span>Save Service Listing</span>
+                  </button>
+                </div>
+              </form>
+            )}
 
-                        {/* Hire Button */}
-                        {!isMe ? (
+            {/* Active / Pending Hire Status Banner */}
+            {(incomingHires.some((h) => h.status === 'pending' || h.status === 'accepted') ||
+              outgoingHires.some((h) => h.status === 'accepted')) && (
+              <div className="space-y-2">
+                {incomingHires
+                  .filter((h) => h.status === 'pending' || h.status === 'accepted')
+                  .map((hire) => (
+                    <div
+                      key={hire.id}
+                      className="rounded-2xl bg-white/95 border border-blue-300 shadow-md p-3.5 flex items-center justify-between gap-3 flex-wrap text-xs"
+                    >
+                      <div>
+                        <span className="px-2 py-0.5 rounded-full bg-blue-600 text-white text-[9px] font-black uppercase">
+                          {hire.status === 'pending' ? 'Hire Request' : 'Active Hire'}
+                        </span>
+                        <p className="font-bold text-slate-900 mt-1">
+                          {hire.userName} • {hire.serviceTitle}
+                        </p>
+                        <p className="text-[11px] text-slate-600">{hire.destAddress}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {hire.status === 'pending' ? (
                           <button
                             type="button"
                             onClick={() => {
                               playClickSound();
-                              openHireModal(seeker);
+                              handleAcceptHire(hire);
                             }}
-                            className="px-3.5 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold shadow-sm transition shrink-0"
+                            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition"
                           >
-                            Hire
+                            Accept &amp; Navigate
                           </button>
                         ) : (
-                          <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold shrink-0">
-                            You
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              playClickSound();
+                              setActiveTab('gigs');
+                            }}
+                            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition"
+                          >
+                            Open Live Map
+                          </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playClickSound();
+                            setCancelReasonInput('');
+                            setCancelModalHire(hire);
+                          }}
+                          className="min-h-[40px] px-3 py-2 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200 font-bold transition"
+                        >
+                          Cancel
+                        </button>
                       </div>
-                    );
-                  })
-              )}
-            </div>
+                    </div>
+                  ))}
+
+                {outgoingHires
+                  .filter((h) => h.status === 'accepted')
+                  .map((hire) => (
+                    <div
+                      key={hire.id}
+                      className="rounded-2xl bg-white/95 border border-emerald-300 shadow-md p-3.5 flex items-center justify-between gap-3 flex-wrap text-xs"
+                    >
+                      <div>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] font-black uppercase">
+                          Seeker En Route
+                        </span>
+                        <p className="font-bold text-slate-900 mt-1">
+                          {hire.seekerName} • {hire.serviceTitle}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playClickSound();
+                            setActiveTab('gigs');
+                          }}
+                          className="min-h-[40px] px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition"
+                        >
+                          Track on Map
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playClickSound();
+                            setRatingValue(5);
+                            setRatingComment('');
+                            setRatingModalHire(hire);
+                          }}
+                          className="min-h-[40px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition"
+                        >
+                          Complete &amp; Rate
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+
+            {/* Seekers Offering Services List */}
+            {(() => {
+              const q = seekerQuery.trim().toLowerCase();
+              const serviceSeekers = seekersList
+                .filter((s) => {
+                  if (s.status === 'frozen' || s.status === 'rejected') return false;
+                  if (s.offeringService === false) return false;
+                  const hasService = Boolean(s.serviceTitle && s.serviceTitle.trim());
+                  if (!hasService && !q) {
+                    return true;
+                  }
+                  if (!q) return true;
+                  return (
+                    (s.displayName || '').toLowerCase().includes(q) ||
+                    (s.serviceTitle || '').toLowerCase().includes(q) ||
+                    (s.serviceDescription || '').toLowerCase().includes(q) ||
+                    (s.serviceRate || '').toLowerCase().includes(q) ||
+                    (s.location || '').toLowerCase().includes(q)
+                  );
+                })
+                .sort((a, b) => {
+                  const aHas = a.serviceTitle && a.serviceTitle.trim() ? 1 : 0;
+                  const bHas = b.serviceTitle && b.serviceTitle.trim() ? 1 : 0;
+                  if (aHas !== bHas) return bHas - aHas;
+                  return b.updatedAt - a.updatedAt;
+                });
+
+              if (serviceSeekers.length === 0) {
+                return (
+                  <div className="rounded-3xl bg-white/95 border border-slate-200 shadow-lg p-8 text-center space-y-3">
+                    <UserSearch className="h-10 w-10 text-violet-600 mx-auto" />
+                    <h3 className="text-sm font-bold text-slate-900">No Seekers Found</h3>
+                    <p className="text-xs text-slate-600 max-w-md mx-auto">
+                      {q
+                        ? 'No seekers match your search. Try searching a different skill or location.'
+                        : 'Be the first seeker to list a service for hire to users on the app!'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClickSound();
+                        setServiceEditorOpen(true);
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs transition"
+                    >
+                      <Briefcase className="h-3.5 w-3.5" />
+                      <span>List Your Service</span>
+                    </button>
+                  </div>
+                );
+              }
+
+              return serviceSeekers.map((seeker) => {
+                const ratingInfo = seekerRatingsMap[seeker.uid];
+                const isMe = currentUser?.uid === seeker.uid;
+                const seekerAvatar = isMe
+                  ? selfieDataUrl || myAvatarThumb || seeker.avatar || currentUser?.photoURL || null
+                  : seeker.avatar;
+                const hasImageAvatar = Boolean(
+                  seekerAvatar && (seekerAvatar.startsWith('data:image') || seekerAvatar.startsWith('http'))
+                );
+
+                return (
+                  <div
+                    key={seeker.uid}
+                    className="rounded-2xl bg-white/95 border border-slate-200 hover:border-violet-300 shadow-lg p-4 space-y-3 transition"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="relative shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              playClickSound();
+                              if (hasImageAvatar && seekerAvatar) {
+                                setLightboxDoc({
+                                  title: `${seeker.displayName} — Face Selfie`,
+                                  name: seeker.serviceTitle || 'Seeker Profile',
+                                  url: seekerAvatar,
+                                  isImage: true,
+                                });
+                              } else if (isMe) {
+                                startCamera();
+                              }
+                            }}
+                            className="h-14 w-14 rounded-full overflow-hidden bg-slate-100 border-2 border-violet-500/80 flex items-center justify-center shadow-sm hover:scale-105 transition"
+                            title={hasImageAvatar ? 'View Face Selfie' : isMe ? 'Take Face Selfie' : 'No Selfie'}
+                          >
+                            {hasImageAvatar && seekerAvatar ? (
+                              <img src={seekerAvatar} alt={`${seeker.displayName} face selfie`} className="h-full w-full object-cover" />
+                            ) : (
+                              <User className="h-6 w-6 text-violet-600" />
+                            )}
+                          </button>
+                          {isMe && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                playClickSound();
+                                startCamera();
+                              }}
+                              className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full bg-violet-600 hover:bg-violet-500 text-white border border-white flex items-center justify-center shadow transition"
+                              title="Update Face Selfie"
+                            >
+                              <Camera className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-sm font-bold text-slate-900 truncate">{seeker.displayName}</h3>
+                            {isMe && (
+                              <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200 text-[9px] font-black uppercase">
+                                You
+                              </span>
+                            )}
+                            {ratingInfo && ratingInfo.count > 0 && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold">
+                                <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                                {ratingInfo.avg.toFixed(1)} ({ratingInfo.count})
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2.5 py-0.5 rounded-lg bg-violet-100 border border-violet-200 text-violet-800 text-xs font-bold">
+                              {seeker.serviceTitle?.trim() || 'General Service'}
+                            </span>
+                            {seeker.serviceRate && (
+                              <span className="px-2.5 py-0.5 rounded-lg bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold tabular-nums">
+                                {seeker.serviceRate}
+                              </span>
+                            )}
+                          </div>
+
+                          {seeker.serviceDescription && (
+                            <p className="text-xs text-slate-700 leading-relaxed">{seeker.serviceDescription}</p>
+                          )}
+
+                          {seeker.location && (
+                            <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                              <MapPin className="h-3 w-3 text-violet-600 shrink-0" />
+                              <span className="truncate">{seeker.location}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                      {isMe ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playClickSound();
+                            setServiceEditorOpen(true);
+                          }}
+                          className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition"
+                        >
+                          <Pencil className="h-3.5 w-3.5 text-violet-600" />
+                          <span>Edit My Service</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playClickSound();
+                            openHireModal(seeker);
+                          }}
+                          className="min-h-[40px] px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-violet-600/20 transition active:scale-95"
+                        >
+                          <Briefcase className="h-3.5 w-3.5" />
+                          <span>Hire Service</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
       )}
@@ -5953,13 +6385,13 @@ export default function App() {
       })()}
 
       {/* Bottom Right: Map Menu (on top of Zoom) + Zoom + Satellite + Info (GiGs only), & Upgrade Bubble */}
-      <div className="absolute bottom-16 right-4 z-25 flex flex-col gap-2 items-end pointer-events-auto">
+      <div className="absolute bottom-32 sm:bottom-36 right-4 z-25 flex flex-col gap-2.5 items-end pointer-events-auto">
         {activeTab === 'gigs' && (
           <>
             {/* Map Menu Icon on Top of Zoom Feature (Create Gig, Add Company Page & Businesses) */}
             <div className="relative flex flex-col items-end">
               {mapToolsMenuOpen && (
-                <div className="absolute right-12 top-0 w-52 rounded-2xl bg-white border border-slate-200 shadow-2xl p-1.5 space-y-1 z-30">
+                <div className="absolute right-14 top-0 w-52 rounded-2xl bg-white border border-slate-200 shadow-2xl p-1.5 space-y-1 z-30">
                   <button
                     type="button"
                     onClick={() => {
@@ -5969,7 +6401,7 @@ export default function App() {
                     }}
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-800 hover:bg-emerald-50 hover:text-emerald-700 transition text-left"
                   >
-                    <div className="h-7 w-7 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shrink-0">
+                    <div className="h-7 w-7 rounded-lg bg-emerald-500 text-white border border-emerald-400 flex items-center justify-center shrink-0 shadow-sm">
                       <PlusCircle className="h-4 w-4" />
                     </div>
                     <span>Create Gig</span>
@@ -5985,7 +6417,7 @@ export default function App() {
                       }}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-800 hover:bg-indigo-50 hover:text-indigo-700 transition text-left"
                     >
-                      <div className="h-7 w-7 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center shrink-0">
+                      <div className="h-7 w-7 rounded-lg bg-indigo-500 text-white border border-indigo-400 flex items-center justify-center shrink-0 shadow-sm">
                         <Store className="h-4 w-4" />
                       </div>
                       <span>Add Company Page</span>
@@ -6010,7 +6442,7 @@ export default function App() {
                         className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${
                           companyGadgetOpen
                             ? 'bg-white/20 text-white'
-                            : 'bg-indigo-50 text-indigo-600 border border-indigo-100'
+                            : 'bg-indigo-500 text-white border border-indigo-400 shadow-sm'
                         }`}
                       >
                         <Building2 className="h-4 w-4" />
@@ -6028,79 +6460,91 @@ export default function App() {
                         : ''}
                     </span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      setMapToolsMenuOpen(false);
+                      setActiveTab('settings');
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-800 hover:bg-blue-50 hover:text-blue-700 transition text-left"
+                  >
+                    <div className="h-7 w-7 rounded-lg bg-blue-500 text-white border border-blue-400 flex items-center justify-center shrink-0 shadow-sm">
+                      <Settings className="h-4 w-4" />
+                    </div>
+                    <span>Settings</span>
+                  </button>
                 </div>
               )}
 
+              {/* Colorful Menu Bubble */}
+              <div className="relative flex flex-col items-center mb-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClickSound();
+                    setCompanyGadgetOpen(false);
+                    setMapToolsMenuOpen((prev) => !prev);
+                  }}
+                  className={`flex items-center justify-center h-11 w-11 rounded-2xl border shadow-xl transition transform active:scale-95 ${
+                    mapToolsMenuOpen || companyGadgetOpen || isPickingGigLocation || isPickingCompanyLocation
+                      ? 'bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 border-indigo-300 text-white shadow-[0_8px_20px_rgba(99,102,241,0.55)]'
+                      : 'bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-600 border-indigo-300 text-white shadow-[0_8px_20px_rgba(99,102,241,0.45)] hover:brightness-110'
+                  }`}
+                  title="Map Menu"
+                >
+                  {mapToolsMenuOpen ? <X className="h-5 w-5 text-white" /> : <Compass className="h-5 w-5 text-white" />}
+                </button>
+                <span className="text-[10px] font-bold mt-1 text-white bg-indigo-700/90 px-2 py-0.5 rounded-full border border-indigo-400/70 shadow-md whitespace-nowrap">Menu</span>
+              </div>
+
+              {/* Zoom In Bubble (Emerald) */}
               <button
-                type="button"
                 onClick={() => {
                   playClickSound();
-                  setCompanyGadgetOpen(false);
-                  setMapToolsMenuOpen((prev) => !prev);
+                  handleZoomIn();
                 }}
-                className={`mb-2 flex items-center justify-center h-10 w-10 rounded-xl border shadow-xl transition transform active:scale-95 ${
-                  mapToolsMenuOpen || companyGadgetOpen || isPickingGigLocation || isPickingCompanyLocation
-                    ? 'bg-blue-600 border-blue-600 text-white'
-                    : 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50 hover:text-blue-600'
-                }`}
-                title="Map Menu: Create Gig, Add Company Page & Businesses"
+                className="mb-2 flex items-center justify-center h-10 w-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 border border-emerald-300 text-white shadow-[0_8px_18px_rgba(16,185,129,0.4)] hover:brightness-110 transition transform active:scale-95"
+                title="Zoom In"
               >
-                {mapToolsMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+                <Plus className="h-5 w-5 stroke-[2.5]" />
               </button>
 
-              {/* Zoom Controls */}
-              <div className="flex flex-col rounded-xl bg-white border border-slate-200 shadow-xl overflow-hidden divide-y divide-slate-200">
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    handleZoomIn();
-                  }}
-                  className="flex items-center justify-center h-10 w-10 text-slate-800 hover:bg-slate-50 hover:text-blue-600 transition transform active:scale-95"
-                  title="Zoom In"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    handleZoomOut();
-                  }}
-                  className="flex items-center justify-center h-10 w-10 text-slate-800 hover:bg-slate-50 hover:text-blue-600 transition transform active:scale-95"
-                  title="Zoom Out"
-                >
-                  <Minus className="h-4 w-4" />
-                </button>
-              </div>
+              {/* Zoom Out Bubble (Amber/Orange) */}
+              <button
+                onClick={() => {
+                  playClickSound();
+                  handleZoomOut();
+                }}
+                className="mb-2 flex items-center justify-center h-10 w-10 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 border border-amber-300 text-white shadow-[0_8px_18px_rgba(245,158,11,0.4)] hover:brightness-110 transition transform active:scale-95"
+                title="Zoom Out"
+              >
+                <Minus className="h-5 w-5 stroke-[2.5]" />
+              </button>
             </div>
 
-            <button
-              onClick={() => {
-                playClickSound();
-                toggleSatellite();
-              }}
-              className={`flex items-center justify-center h-10 w-10 rounded-xl border shadow-xl transition transform active:scale-95 ${
-                isSatellite
-                  ? 'bg-blue-600 border-blue-600 text-white'
-                  : 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50 hover:text-blue-600'
-              }`}
-              title="Satellite View"
-            >
-              <Satellite className="h-4 w-4" />
-            </button>
+            {/* Satellite View Bubble (Sky/Blue) */}
+            <div className="relative flex flex-col items-center mb-1">
+              <button
+                onClick={() => {
+                  playClickSound();
+                  toggleSatellite();
+                }}
+                className={`flex items-center justify-center h-10 w-10 rounded-2xl border shadow-xl transition transform active:scale-95 ${
+                  isSatellite
+                    ? 'bg-gradient-to-br from-sky-500 via-blue-600 to-cyan-500 text-white border-sky-300 shadow-[0_8px_20px_rgba(14,165,233,0.45)] ring-2 ring-sky-400/40'
+                    : 'bg-gradient-to-br from-slate-700 to-slate-900 text-sky-300 border-slate-600 shadow-[0_6px_16px_rgba(15,23,42,0.3)]'
+                }`}
+                title={isSatellite ? "Satellite View (Active - click to switch to Map)" : "Map View (Click for Satellite)"}
+              >
+                <Satellite className="h-5 w-5" />
+              </button>
+              <span className={`text-[9px] font-bold mt-1 px-1.5 py-0.2 rounded-full border shadow-sm whitespace-nowrap ${isSatellite ? 'bg-sky-600 text-white border-sky-400' : 'bg-slate-800 text-slate-200 border-slate-700'}`}>
+                {isSatellite ? 'Sat' : 'Map'}
+              </span>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                playClickSound();
-                setFeatureInfoTab('gigs');
-              }}
-              aria-label="GiGs Map Information"
-              className="flex items-center justify-center h-10 w-10 rounded-xl bg-white/95 border border-blue-200 text-blue-600 hover:bg-blue-600 hover:text-white hover:border-blue-600 shadow-xl transition transform active:scale-95"
-              title="GiGs Info"
-            >
-              <Info className="h-4 w-4" />
-            </button>
           </>
         )}
 
@@ -6116,7 +6560,7 @@ export default function App() {
                 playClickSound();
                 setUpgradeModalOpen(true);
               }}
-              className="flex items-center justify-center h-10 w-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-xl hover:opacity-90 transition transform active:scale-95"
+              className="flex items-center justify-center h-10 w-10 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-xl hover:opacity-90 transition transform active:scale-95"
               title="Upgrade Subscriptions — Tenant spots running out quickly!"
             >
               <Crown className="h-4 w-4" />
@@ -6125,824 +6569,774 @@ export default function App() {
         )}
       </div>
 
-      {/* Smaller Bottom Menu Bar (DOCKED AT BOTTOM IN ALL VIEWS) */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 py-1.5 px-4 shadow-xl flex justify-around items-center">
-        {!isAuthenticated ? (
-          <button
-            onClick={() => {
-              playClickSound();
-              setAuthModalOpen(true);
-            }}
-            className="flex flex-col items-center justify-center group text-slate-700 hover:text-blue-600 transition py-0.5"
-          >
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 group-hover:bg-blue-50 transition">
-              <LogIn className="h-3.5 w-3.5 text-slate-700 group-hover:text-blue-600" />
+      {/* See-Through Glass Bottom Menu Bar (Spread out and fill the bottom) */}
+      <div className="fixed bottom-3 inset-x-3 sm:inset-x-8 md:mx-auto md:max-w-3xl z-40 pointer-events-auto">
+        <nav className="w-full rounded-3xl bg-white/25 backdrop-blur-xl border border-white/45 shadow-[0_10px_34px_rgba(15,23,42,0.24),inset_0_1px_1px_rgba(255,255,255,0.7)] px-3 sm:px-6 py-2">
+          {chosenSubscription === 'user' ? (
+            /* User Sub: ONLY Seekers, GiGs, and Profile (Spread out to fill bottom) */
+            <div className="w-full flex items-end justify-between">
+              {/* Seekers Icon (Small) */}
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setActiveTab((prev) => (prev === 'seekers' ? 'gigs' : 'seekers'));
+                }}
+                className="min-h-[44px] min-w-[44px] flex flex-col items-center justify-center group transition transform active:scale-95"
+                title="Seekers"
+              >
+                <div
+                  className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border transition group-hover:scale-110 ${
+                    activeTab === 'seekers'
+                      ? 'bg-gradient-to-br from-violet-500 via-purple-600 to-indigo-700 text-white border-violet-300 shadow-[0_6px_16px_rgba(139,92,246,0.45),inset_0_1px_1px_rgba(255,255,255,0.5)]'
+                      : 'bg-white/75 backdrop-blur-md text-violet-700 border-white/70 shadow-[0_4px_12px_rgba(15,23,42,0.14)] hover:bg-white/95'
+                  }`}
+                >
+                  <UserSearch className="h-4 w-4 drop-shadow-sm" />
+                </div>
+                <span
+                  className={`text-[9px] font-bold mt-1 px-2 py-0.2 rounded-full border shadow-sm whitespace-nowrap transition ${
+                    activeTab === 'seekers'
+                      ? 'bg-violet-600 text-white border-violet-400'
+                      : 'bg-white/75 backdrop-blur-sm text-slate-900 border-white/60 group-hover:text-violet-700'
+                  }`}
+                >
+                  Seekers
+                </span>
+              </button>
+
+              {/* GiGs Icon (Small Center Hero) */}
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setActiveTab('gigs');
+                }}
+                className="min-h-[44px] min-w-[44px] flex flex-col items-center justify-center group transition transform active:scale-95 -mt-1.5"
+                title="GiGs"
+              >
+                <div
+                  className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition group-hover:scale-110 ${
+                    activeTab === 'gigs'
+                      ? 'border-white/60 bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 text-white shadow-[0_8px_20px_rgba(37,99,235,0.55),inset_0_2px_2px_rgba(255,255,255,0.5)]'
+                      : 'border-white/70 bg-white/80 backdrop-blur-md text-blue-600 shadow-[0_6px_16px_rgba(37,99,235,0.22)] hover:bg-white/95'
+                  }`}
+                >
+                  <Zap className="h-5 w-5 drop-shadow-[0_2px_2px_rgba(0,0,0,0.25)]" />
+                </div>
+                <span
+                  className={`text-[9px] font-black mt-1 px-2 py-0.2 rounded-full border shadow-sm whitespace-nowrap transition ${
+                    activeTab === 'gigs'
+                      ? 'bg-blue-600 text-white border-blue-400'
+                      : 'bg-white/75 backdrop-blur-sm text-blue-700 border-white/60'
+                  }`}
+                >
+                  GiGs
+                </span>
+              </button>
+
+              {/* Profile Icon (Small) */}
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setActiveTab((prev) => (prev === 'profile' ? 'gigs' : 'profile'));
+                }}
+                className="min-h-[44px] min-w-[44px] flex flex-col items-center justify-center group transition transform active:scale-95"
+                title="Profile"
+              >
+                <div
+                  className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border transition group-hover:scale-110 ${
+                    activeTab === 'profile'
+                      ? 'bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-700 text-white border-sky-300 shadow-[0_6px_16px_rgba(14,165,233,0.45),inset_0_1px_1px_rgba(255,255,255,0.5)]'
+                      : 'bg-white/75 backdrop-blur-md text-sky-700 border-white/70 shadow-[0_4px_12px_rgba(15,23,42,0.14)] hover:bg-white/95'
+                  }`}
+                >
+                  <IdCard className="h-4 w-4 drop-shadow-sm" />
+                </div>
+                <span
+                  className={`text-[9px] font-bold mt-1 px-2 py-0.2 rounded-full border shadow-sm whitespace-nowrap transition ${
+                    activeTab === 'profile'
+                      ? 'bg-sky-600 text-white border-sky-400'
+                      : 'bg-white/75 backdrop-blur-sm text-slate-900 border-white/60 group-hover:text-sky-700'
+                  }`}
+                >
+                  Profile
+                </span>
+              </button>
             </div>
-            <span className="text-[10px] font-semibold mt-0.5 text-slate-600 group-hover:text-blue-600">
-              Sign In / Sign Up
-            </span>
-          </button>
-        ) : !isMainTenant && (!chosenSubscription || !isSubscriptionActive) ? (
-          <>
+          ) : (
+            /* Tenant Sub: Tenant, Referrals, GiGs, Seekers, Help (Spread out to fill bottom) */
+            <div className="w-full flex items-end justify-between">
+              {/* Tenant Icon (Small) */}
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setActiveTab((prev) => (prev === 'tenant' ? 'gigs' : 'tenant'));
+                }}
+                className="min-h-[44px] min-w-[44px] flex flex-col items-center justify-center group transition transform active:scale-95"
+                title="Tenant"
+              >
+                <div
+                  className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border transition group-hover:scale-110 ${
+                    activeTab === 'tenant'
+                      ? 'bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600 text-white border-amber-300 shadow-[0_6px_16px_rgba(245,158,11,0.45),inset_0_1px_1px_rgba(255,255,255,0.5)]'
+                      : 'bg-white/75 backdrop-blur-md text-amber-700 border-white/70 shadow-[0_4px_12px_rgba(15,23,42,0.14)] hover:bg-white/95'
+                  }`}
+                >
+                  <Building2 className="h-4 w-4 drop-shadow-sm" />
+                </div>
+                <span
+                  className={`text-[9px] font-bold mt-1 px-1.5 py-0.2 rounded-full border shadow-sm whitespace-nowrap transition ${
+                    activeTab === 'tenant'
+                      ? 'bg-amber-600 text-white border-amber-400'
+                      : 'bg-white/75 backdrop-blur-sm text-slate-900 border-white/60 group-hover:text-amber-700'
+                  }`}
+                >
+                  Tenant
+                </span>
+              </button>
+
+              {/* Referrals Icon (Small) */}
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setActiveTab((prev) => (prev === 'referrals' ? 'gigs' : 'referrals'));
+                }}
+                className="min-h-[44px] min-w-[44px] flex flex-col items-center justify-center group transition transform active:scale-95"
+                title="Referrals"
+              >
+                <div
+                  className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border transition group-hover:scale-110 ${
+                    activeTab === 'referrals'
+                      ? 'bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 text-white border-emerald-300 shadow-[0_6px_16px_rgba(16,185,129,0.45),inset_0_1px_1px_rgba(255,255,255,0.5)]'
+                      : 'bg-white/75 backdrop-blur-md text-emerald-700 border-white/70 shadow-[0_4px_12px_rgba(15,23,42,0.14)] hover:bg-white/95'
+                  }`}
+                >
+                  <Share2 className="h-4 w-4 drop-shadow-sm" />
+                </div>
+                <span
+                  className={`text-[9px] font-bold mt-1 px-1.5 py-0.2 rounded-full border shadow-sm whitespace-nowrap transition ${
+                    activeTab === 'referrals'
+                      ? 'bg-emerald-600 text-white border-emerald-400'
+                      : 'bg-white/75 backdrop-blur-sm text-slate-900 border-white/60 group-hover:text-emerald-700'
+                  }`}
+                >
+                  Referrals
+                </span>
+              </button>
+
+              {/* GiGs Icon (Small Center Hero) */}
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setActiveTab('gigs');
+                }}
+                className="min-h-[44px] min-w-[44px] flex flex-col items-center justify-center group transition transform active:scale-95 -mt-1.5"
+                title="GiGs"
+              >
+                <div
+                  className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition group-hover:scale-110 ${
+                    activeTab === 'gigs'
+                      ? 'border-white/60 bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 text-white shadow-[0_8px_20px_rgba(37,99,235,0.55),inset_0_2px_2px_rgba(255,255,255,0.5)]'
+                      : 'border-white/70 bg-white/80 backdrop-blur-md text-blue-600 shadow-[0_6px_16px_rgba(37,99,235,0.22)] hover:bg-white/95'
+                  }`}
+                >
+                  <Zap className="h-5 w-5 drop-shadow-[0_2px_2px_rgba(0,0,0,0.25)]" />
+                </div>
+                <span
+                  className={`text-[9px] font-black mt-1 px-2 py-0.2 rounded-full border shadow-sm whitespace-nowrap transition ${
+                    activeTab === 'gigs'
+                      ? 'bg-blue-600 text-white border-blue-400'
+                      : 'bg-white/75 backdrop-blur-sm text-blue-700 border-white/60'
+                  }`}
+                >
+                  GiGs
+                </span>
+              </button>
+
+              {/* Seekers Icon (Small) */}
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setActiveTab((prev) => (prev === 'seekers' ? 'gigs' : 'seekers'));
+                }}
+                className="min-h-[44px] min-w-[44px] flex flex-col items-center justify-center group transition transform active:scale-95"
+                title="Seekers"
+              >
+                <div
+                  className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border transition group-hover:scale-110 ${
+                    activeTab === 'seekers'
+                      ? 'bg-gradient-to-br from-violet-500 via-purple-600 to-indigo-700 text-white border-violet-300 shadow-[0_6px_16px_rgba(139,92,246,0.45),inset_0_1px_1px_rgba(255,255,255,0.5)]'
+                      : 'bg-white/75 backdrop-blur-md text-violet-700 border-white/70 shadow-[0_4px_12px_rgba(15,23,42,0.14)] hover:bg-white/95'
+                  }`}
+                >
+                  <UserSearch className="h-4 w-4 drop-shadow-sm" />
+                </div>
+                <span
+                  className={`text-[9px] font-bold mt-1 px-1.5 py-0.2 rounded-full border shadow-sm whitespace-nowrap transition ${
+                    activeTab === 'seekers'
+                      ? 'bg-violet-600 text-white border-violet-400'
+                      : 'bg-white/75 backdrop-blur-sm text-slate-900 border-white/60 group-hover:text-violet-700'
+                  }`}
+                >
+                  Seekers
+                </span>
+              </button>
+
+              {/* Help Icon (Small) */}
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setSettingsHelpOpen((prev) => !prev);
+                }}
+                className="min-h-[44px] min-w-[44px] flex flex-col items-center justify-center group transition transform active:scale-95"
+                title="Help"
+              >
+                <div
+                  className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border transition group-hover:scale-110 ${
+                    settingsHelpOpen
+                      ? 'bg-gradient-to-br from-rose-500 via-pink-600 to-rose-700 text-white border-rose-300 shadow-[0_6px_16px_rgba(244,63,94,0.45),inset_0_1px_1px_rgba(255,255,255,0.5)]'
+                      : 'bg-white/75 backdrop-blur-md text-rose-700 border-white/70 shadow-[0_4px_12px_rgba(15,23,42,0.14)] hover:bg-white/95'
+                  }`}
+                >
+                  <HelpCircle className="h-4 w-4 drop-shadow-sm" />
+                </div>
+                <span
+                  className={`text-[9px] font-bold mt-1 px-1.5 py-0.2 rounded-full border shadow-sm whitespace-nowrap transition ${
+                    settingsHelpOpen
+                      ? 'bg-rose-600 text-white border-rose-400'
+                      : 'bg-white/75 backdrop-blur-sm text-slate-900 border-white/60 group-hover:text-rose-700'
+                  }`}
+                >
+                  Help
+                </span>
+              </button>
+            </div>
+          )}
+        </nav>
+      </div>
+
+      {/* Settings Feature View */}
+      {activeTab === 'settings' && (
+        <div className="fixed inset-0 z-30 bg-gradient-to-br from-gray-100/95 via-gray-200/95 to-slate-300/95 backdrop-blur-2xl flex flex-col items-center justify-center p-5 pb-20 text-slate-900 overflow-y-auto">
+          <FloatingToolsWallpaper opacity="opacity-90" />
+          <div className="relative z-10 w-full max-w-sm rounded-3xl bg-white/95 p-6 shadow-2xl border border-slate-200 flex flex-col items-center gap-4 text-center">
+            <div className="h-12 w-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center">
+              <Settings className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Settings</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Manage your account session &amp; subscription status</p>
+            </div>
+
+            {/* Subscription Status Card (Single Locked Plan Until It Ends) */}
+            <div className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col gap-2 text-left">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-700">Subscription Plan</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                    isMainTenant
+                      ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                      : isSubscriptionEnded
+                      ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                      : isSubscriptionLocked
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      : 'bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {isMainTenant
+                    ? 'Main Tenant'
+                    : chosenSubscription === 'tenant'
+                    ? 'Tenant Sub'
+                    : chosenSubscription === 'company'
+                    ? 'Company Sub'
+                    : chosenSubscription === 'user'
+                    ? 'User Sub'
+                    : 'Not Selected'}
+                </span>
+              </div>
+
+              {isMainTenant ? (
+                <p className="text-[11px] text-slate-600">
+                  Main Tenant account active. You receive direct and User Sub referrals in Referrals.
+                </p>
+              ) : isSubscriptionLocked ? (
+                <>
+                  <div className="flex items-center justify-between text-[11px] text-slate-700 font-semibold">
+                    <span>Status: {mySubmissionStatus === 'pending' ? 'Pending Review' : hasActiveTrial ? 'Free Trial' : 'Active'}</span>
+                    <span className="tabular-nums text-blue-700">{timeLeft}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-snug">
+                    You can only hold 1 subscription at a time and cannot switch plans while it is active. When this subscription ends, you can decide which subscription to activate again.
+                  </p>
+                  {mySubmissionStatus === 'none' && !hasActiveTrial && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClickSound();
+                        setSelectedSubTier(
+                          chosenSubscription === 'tenant'
+                            ? 'Tenant Sub (R299.99)'
+                            : chosenSubscription === 'company'
+                            ? 'Company Sub (R199.99)'
+                            : 'User Sub (R29.99)'
+                        );
+                        setOnboardingModalOpen(true);
+                      }}
+                      className="w-full min-h-[40px] mt-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition"
+                    >
+                      Complete Verification
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-[11px] text-slate-600 leading-snug">
+                    {isSubscriptionEnded
+                      ? 'Your previous subscription has ended. Decide which subscription plan you want to activate next.'
+                      : 'Choose 1 subscription plan to unlock the app features.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      setStartupSubChooserDismissed(false);
+                      setUpgradeModalOpen(true);
+                    }}
+                    className="w-full min-h-[42px] py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-600/20 transition"
+                  >
+                    Choose Subscription Plan
+                  </button>
+                </>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                playClickSound();
+                setActiveTab('gigs');
+              }}
+              className="w-full min-h-[44px] py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
+            >
+              Back to Map
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                playClickSound();
+                handleSignOut();
+              }}
+              className="w-full min-h-[44px] py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-600/20 transition"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Logout</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated Tenant Feature View */}
+      {activeTab === 'tenant' && (
+        <div className="fixed inset-0 z-35 bg-gradient-to-br from-gray-100/95 via-gray-200/95 to-slate-300/95 backdrop-blur-2xl flex flex-col text-slate-900 overflow-y-auto pb-28">
+          <FloatingToolsWallpaper opacity="opacity-85" />
+
+          {/* Top Bar with Profile Logo and Close */}
+          <div className="relative z-10 flex items-center justify-between p-4 sm:p-6 border-b border-slate-300/80 max-w-3xl mx-auto w-full">
+            <div className="flex items-center gap-3">
+              {/* Profile logo with user face selfie in it */}
+              <div className="relative group">
+                <div className="h-12 w-12 sm:h-14 sm:w-14 rounded-full border-2 border-amber-500 p-0.5 shadow-lg shadow-amber-500/20 bg-white flex items-center justify-center overflow-hidden">
+                  {selfieDataUrl || myAvatarThumb || currentUser?.photoURL ? (
+                    <img
+                      src={selfieDataUrl || myAvatarThumb || currentUser?.photoURL || ''}
+                      alt="User Face Selfie"
+                      className="h-full w-full object-cover rounded-full"
+                    />
+                  ) : (
+                    <User className="h-6 w-6 text-amber-600" />
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="absolute -bottom-1 -right-1 p-1.5 bg-amber-500 hover:bg-amber-400 text-white rounded-full shadow transition"
+                  title="Update Face Selfie"
+                >
+                  <Camera className="h-3 w-3" />
+                </button>
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-black text-slate-900">
+                    {firstName || lastName ? `${firstName} ${lastName}`.trim() : (currentUser?.displayName || 'Tenant Partner')}
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-[10px] font-black uppercase text-white shadow-sm">
+                    Tenant
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600">{currentUser?.email || 'Active Tenant Account'}</p>
+              </div>
+            </div>
+
             <button
               onClick={() => {
                 playClickSound();
                 setActiveTab('gigs');
               }}
-              className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'gigs' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
+              className="min-h-[44px] min-w-[44px] p-2.5 rounded-2xl bg-white/90 hover:bg-white text-slate-700 border border-slate-300/80 shadow-sm flex items-center justify-center transition"
+              title="Close to Map"
             >
-              <div
-                className={`flex h-9 w-9 -mt-2.5 items-center justify-center rounded-2xl shadow-md transition group-hover:scale-110 ${
-                  activeTab === 'gigs'
-                    ? 'bg-blue-600 text-white shadow-blue-600/30'
-                    : 'bg-slate-900 text-white'
-                }`}
-              >
-                <Zap className="h-5 w-5" />
-              </div>
-              <span className="text-[10px] font-bold mt-0.5">GiGs</span>
+              <X className="h-5 w-5" />
             </button>
+          </div>
 
+          {/* Body Content */}
+          <div className="relative z-10 max-w-3xl mx-auto w-full px-4 sm:px-6 py-6 space-y-8">
+            {/* Total Profit Balance - EXPLICITLY NOT IN A BOX */}
+            <div className="text-center py-4">
+              <span className="text-xs sm:text-sm font-bold uppercase tracking-widest text-amber-700">
+                Total Profit Balance
+              </span>
+              <div className="text-4xl sm:text-6xl md:text-7xl font-black text-slate-900 tracking-tight mt-1 tabular-nums">
+                R{totalProfit.toFixed(2)}
+              </div>
+              <p className="text-xs sm:text-sm text-slate-600 mt-2">
+                Live net profit accumulated from your network referrals
+              </p>
+            </div>
+
+            {/* Tenant Sub Profit and User Sub Profit */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-5 rounded-2xl bg-white/95 border border-slate-200 shadow-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-700">
+                    Tenant Sub Profit
+                  </span>
+                  <Building2 className="h-4 w-4 text-amber-600" />
+                </div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums">
+                  R{tenantProfit.toFixed(2)}
+                </div>
+                <p className="text-xs text-slate-600 mt-1">
+                  From {tenantSubApprovedCount} active approved Tenant {tenantSubApprovedCount === 1 ? 'referral' : 'referrals'}
+                </p>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-white/95 border border-slate-200 shadow-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-blue-700">
+                    User Sub Profit
+                  </span>
+                  <Users className="h-4 w-4 text-blue-600" />
+                </div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums">
+                  R{userProfit.toFixed(2)}
+                </div>
+                <p className="text-xs text-slate-600 mt-1">
+                  From {userSubApprovedCount} active approved User {userSubApprovedCount === 1 ? 'referral' : 'referrals'}
+                </p>
+              </div>
+            </div>
+
+            {/* Tenant Referral Link to Share and Build Network */}
+            <div className="p-6 rounded-3xl bg-white/95 border border-amber-300/80 shadow-xl space-y-4">
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Share2 className="h-5 w-5 text-amber-600" />
+                  <span>Tenant Referral Link</span>
+                </h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Share your personalized referral link to invite Tenants and Users, build your network, and earn monthly subscription profits.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="flex-1 rounded-xl bg-slate-100 border border-slate-300 px-3.5 py-2.5 text-xs text-slate-800 font-mono truncate select-all">
+                  {typeof window !== 'undefined' ? `${window.location.origin}?ref=${myReferralCode || 'YOUR_CODE'}` : `?ref=${myReferralCode || 'YOUR_CODE'}`}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = `${window.location.origin}?ref=${myReferralCode}`;
+                    navigator.clipboard?.writeText(link);
+                    playClickSound();
+                    setCopiedLink(link);
+                    setTimeout(() => setCopiedLink(null), 3000);
+                  }}
+                  className="min-h-[42px] px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-xs flex items-center justify-center gap-2 transition shadow-md shadow-amber-500/20 active:scale-95 shrink-0"
+                >
+                  <Copy className="h-4 w-4" />
+                  <span>{copiedLink ? 'Copied Link!' : 'Copy Link'}</span>
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-1 items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = `${window.location.origin}?ref=${myReferralCode}`;
+                    const text = `Join my network on TimeGiG! Sign up with my Tenant referral link to get started: ${link}`;
+                    if (navigator.share) {
+                      navigator.share({ title: 'TimeGiG Tenant Network', text, url: link }).catch(() => {});
+                    } else {
+                      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                    }
+                  }}
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs flex items-center gap-2 transition"
+                >
+                  <Share2 className="h-3.5 w-3.5 text-amber-600" />
+                  <span>Share with Network / WhatsApp</span>
+                </button>
+
+                <div className="flex items-center gap-2 text-xs text-slate-600">
+                  <span>Referral Code:</span>
+                  <span className="font-mono font-bold text-amber-700">{myReferralCode || 'N/A'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Collapsible Pricing & Approval Settings */}
+            <div className="pt-2 border-t border-slate-300/80">
+              <button
+                type="button"
+                onClick={() => setTenantMenuOpen((prev) => !prev)}
+                className="w-full min-h-[44px] py-2.5 px-4 rounded-xl bg-white/90 hover:bg-white border border-slate-300 text-xs font-semibold text-slate-800 flex items-center justify-between shadow-sm transition"
+              >
+                <span>Subscription Pricing & Approval Settings</span>
+                <span className="text-[11px] text-amber-700 font-bold">{tenantMenuOpen ? 'Hide ▲' : 'Configure ▼'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated Profile Feature View (Selfie Logo, Required Fields, User Sub Referral Link & Reward Points Cash Conversion / Withdrawal) */}
+      {activeTab === 'profile' && (
+        <div className="fixed inset-0 z-35 bg-gradient-to-br from-gray-100/95 via-gray-200/95 to-slate-300/95 backdrop-blur-2xl flex flex-col text-slate-900 overflow-y-auto pb-28">
+          <FloatingToolsWallpaper opacity="opacity-85" />
+
+          {/* Top Bar with Close / Back to Map */}
+          <div className="relative z-10 flex items-center justify-between p-4 sm:p-6 border-b border-slate-300/80 max-w-lg mx-auto w-full">
+            <h2 className="text-base sm:text-lg font-black text-slate-900">Profile</h2>
             <button
               onClick={() => {
                 playClickSound();
-                handleSignOut();
+                setActiveTab('gigs');
               }}
-              className="flex flex-col items-center justify-center group text-slate-600 hover:text-rose-600 transition py-0.5"
-              title="Logout"
+              className="min-h-[44px] min-w-[44px] p-2.5 rounded-2xl bg-white/90 hover:bg-white text-slate-700 border border-slate-300/80 shadow-sm flex items-center justify-center transition"
+              title="Close to Map"
             >
-              <LogOut className="h-4 w-4 group-hover:scale-110 transition" />
-              <span className="text-[10px] font-semibold mt-0.5">Logout</span>
+              <X className="h-5 w-5" />
             </button>
-          </>
-        ) : (
-          <>
-            {chosenSubscription === 'user' ? (
-              <>
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    setActiveTab((prev) => (prev === 'referrals' ? 'gigs' : 'referrals'));
-                  }}
-                  className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'referrals' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
-                >
-                  <Share2 className="h-4 w-4 group-hover:scale-110 transition" />
-                  <span className="text-[10px] font-semibold mt-0.5">Referrals</span>
-                </button>
+          </div>
 
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    setActiveTab((prev) => (prev === 'profile' ? 'gigs' : 'profile'));
-                  }}
-                  className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'profile' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
-                >
-                  <User className="h-4 w-4 group-hover:scale-110 transition" />
-                  <span className="text-[10px] font-semibold mt-0.5">Profile</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    setActiveTab('gigs');
-                  }}
-                  className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'gigs' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
-                >
-                  <div
-                    className={`flex h-9 w-9 -mt-2.5 items-center justify-center rounded-2xl shadow-md transition group-hover:scale-110 ${
-                      activeTab === 'gigs'
-                        ? 'bg-blue-600 text-white shadow-blue-600/30'
-                        : 'bg-slate-900 text-white'
-                    }`}
-                  >
-                    <Zap className="h-5 w-5" />
-                  </div>
-                  <span className="text-[10px] font-bold mt-0.5">GiGs</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    setActiveTab((prev) => (prev === 'seekers' ? 'gigs' : 'seekers'));
-                  }}
-                  className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'seekers' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
-                >
-                  <Users className="h-4 w-4 group-hover:scale-110 transition" />
-                  <span className="text-[10px] font-semibold mt-0.5">Seekers</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    setActiveTab((prev) => (prev === 'settings' ? 'gigs' : 'settings'));
-                  }}
-                  className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'settings' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
-                >
-                  <Settings className="h-4 w-4 group-hover:scale-110 transition" />
-                  <span className="text-[10px] font-semibold mt-0.5">Settings</span>
-                </button>
-              </>
-            ) : (
-              <>
-                {/* When user chooses Tenant Sub, remove Profile feature and show Settings */}
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    setActiveTab((prev) => (prev === 'tenant' ? 'gigs' : 'tenant'));
-                  }}
-                  className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'tenant' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
-                >
-                  <Building2 className="h-4 w-4 group-hover:scale-110 transition" />
-                  <span className="text-[10px] font-semibold mt-0.5">Tenant</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    setActiveTab((prev) => (prev === 'referrals' ? 'gigs' : 'referrals'));
-                  }}
-                  className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'referrals' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
-                >
-                  <Share2 className="h-4 w-4 group-hover:scale-110 transition" />
-                  <span className="text-[10px] font-semibold mt-0.5">Referrals</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    setActiveTab('gigs');
-                  }}
-                  className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'gigs' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
-                >
-                  <div
-                    className={`flex h-9 w-9 -mt-2.5 items-center justify-center rounded-2xl shadow-md transition group-hover:scale-110 ${
-                      activeTab === 'gigs'
-                        ? 'bg-blue-600 text-white shadow-blue-600/30'
-                        : 'bg-slate-900 text-white'
-                    }`}
-                  >
-                    <Zap className="h-5 w-5" />
-                  </div>
-                  <span className="text-[10px] font-bold mt-0.5">GiGs</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    setActiveTab((prev) => (prev === 'seekers' ? 'gigs' : 'seekers'));
-                  }}
-                  className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'seekers' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
-                >
-                  <Users className="h-4 w-4 group-hover:scale-110 transition" />
-                  <span className="text-[10px] font-semibold mt-0.5">Seekers</span>
-                </button>
-
-                {chosenSubscription !== 'tenant' ? (
-                  <button
-                    onClick={() => {
-                      playClickSound();
-                      setActiveTab((prev) => (prev === 'profile' ? 'gigs' : 'profile'));
-                    }}
-                    className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'profile' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
-                  >
-                    <User className="h-4 w-4 group-hover:scale-110 transition" />
-                    <span className="text-[10px] font-semibold mt-0.5">Profile</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      playClickSound();
-                      setActiveTab((prev) => (prev === 'settings' ? 'gigs' : 'settings'));
-                    }}
-                    className={`flex flex-col items-center justify-center group transition py-0.5 ${activeTab === 'settings' ? 'text-blue-600' : 'text-slate-600 hover:text-blue-600'}`}
-                  >
-                    <Settings className="h-4 w-4 group-hover:scale-110 transition" />
-                    <span className="text-[10px] font-semibold mt-0.5">Settings</span>
-                  </button>
-                )}
-              </>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Full Screen Feature View for Tenant, Profile, and Settings (Dark Grey Blurry Wallpaper) — fills screen but keeps bottom menu bar visible */}
-      {activeTab && activeTab !== 'gigs' && activeTab !== 'referrals' && activeTab !== 'seekers' && (
-        <div className="fixed inset-x-0 top-0 bottom-12 z-20 bg-zinc-900/90 backdrop-blur-2xl flex flex-col items-center justify-start p-3 sm:p-5 text-slate-900 overflow-y-auto">
-          <FloatingToolsWallpaper />
-
-          {/* Content Card (Full height / fill screen with scroll and background wallpaper) */}
-          <div className={`relative z-10 w-full ${activeTab === 'tenant' ? 'max-w-4xl min-h-full sm:min-h-0 sm:my-auto rounded-3xl' : 'max-w-2xl my-auto rounded-3xl'} bg-white/95 backdrop-blur-xl p-4 sm:p-6 shadow-2xl border border-slate-200/80 overflow-hidden`}>
-            {/* Show background wallpaper also inside Tenant feature */}
-            {activeTab === 'tenant' && <FloatingToolsWallpaper opacity="opacity-20" isDark={false} />}
-
-            {/* TENANT FEATURE */}
-            {activeTab === 'tenant' && (
-              <div className="relative z-10 flex flex-col h-full">
-                <div className="flex items-center justify-between gap-2 mb-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playClickSound();
-                        startCamera();
-                      }}
-                      title="Tap to capture or update your face selfie"
-                      className="relative h-11 w-11 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 shrink-0 overflow-hidden flex items-center justify-center hover:ring-2 hover:ring-blue-400 transition"
-                    >
-                      {myAvatarThumb && myAvatarThumb.startsWith('data:image/') ? (
-                        <img src={myAvatarThumb} alt="Tenant Face Selfie" className="h-full w-full object-cover" />
-                      ) : (
-                        <Building2 className="h-5 w-5" />
-                      )}
-                      <span className="absolute bottom-0 right-0 h-4 w-4 rounded-tl-md bg-blue-600 text-white flex items-center justify-center">
-                        <Camera className="h-2.5 w-2.5" />
-                      </span>
-                    </button>
-                    <div className="min-w-0">
-                      <h2 className="text-lg md:text-xl font-bold text-slate-900 truncate">
-                        {isMainTenant ? 'Main Tenant Dashboard' : 'Tenant Profit Dashboard'}
-                      </h2>
-                      <p className="text-xs text-slate-500 truncate">
-                        {isMainTenant ? MAIN_TENANT_EMAIL : 'Live profit & 30-day access timer'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    {/* 30-day countdown timer in Tenant feature */}
-                    <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
-                      <Clock className="h-3.5 w-3.5 text-amber-600 animate-spin" />
-                      <span>
-                        {isMainTenant
-                          ? 'Main Tenant Active'
-                          : isSubscriptionActive
-                          ? timeLeft
-                          : mySubmissionStatus === 'pending'
-                          ? 'Pending Approval'
-                          : 'Subscription Ended'}
-                      </span>
-                    </div>
-
-                    {/* Feedback Inbox Icon at Top Corner of Main Tenant Dashboard */}
-                    {isMainTenant && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          playClickSound();
-                          setFeedbackInboxOpen(true);
-                        }}
-                        className="relative h-9 w-9 rounded-xl bg-slate-100 hover:bg-blue-50 hover:text-blue-600 border border-slate-200 text-slate-700 flex items-center justify-center transition"
-                        title="User Feedback Inbox"
-                      >
-                        <MessageSquare className="h-4 w-4" />
-                        {unreadFeedbackCount > 0 && (
-                          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center shadow">
-                            {unreadFeedbackCount > 99 ? '99+' : unreadFeedbackCount}
-                          </span>
-                        )}
-                      </button>
+          <div className="relative z-10 max-w-lg mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
+            <form onSubmit={handleProfileSubmit} className="space-y-6 rounded-3xl bg-white/95 border border-slate-200 shadow-xl p-5 sm:p-6">
+              {/* Profile Logo with User Face Selfie Inside */}
+              <div className="flex flex-col items-center justify-center text-center">
+                <div className="relative">
+                  <div className="h-24 w-24 sm:h-28 sm:w-28 rounded-full border-4 border-sky-500 p-1 shadow-xl shadow-sky-500/15 bg-slate-100 flex items-center justify-center overflow-hidden">
+                    {selfieDataUrl || myAvatarThumb || currentUser?.photoURL ? (
+                      <img
+                        src={selfieDataUrl || myAvatarThumb || currentUser?.photoURL || ''}
+                        alt="User Face Selfie"
+                        className="h-full w-full object-cover rounded-full"
+                      />
+                    ) : (
+                      <User className="h-12 w-12 text-sky-600" />
                     )}
-
-                    {/* Tenant Feature Info Icon */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playClickSound();
-                        setFeatureInfoTab('tenant');
-                      }}
-                      aria-label="Tenant Information"
-                      className="h-10 w-10 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 flex items-center justify-center transition active:scale-95"
-                      title="Tenant Info"
-                    >
-                      <Info className="h-4 w-4" />
-                    </button>
-
-                    {/* 3-Bar Menu Button at Top Corner */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playClickSound();
-                        setTenantMenuSection('fees');
-                        setTenantMenuOpen(true);
-                      }}
-                      className="h-10 w-10 rounded-xl border bg-slate-100 hover:bg-blue-50 hover:text-blue-600 border-slate-200 text-slate-700 flex items-center justify-center transition active:scale-95"
-                      title="Open Full-Screen Tenant Menu"
-                    >
-                      <Menu className="h-4 w-4" />
-                    </button>
                   </div>
-                </div>
-
-                {/* Profit Grid: Total Profit, Ten, User, REF all same uniform size */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-                  {/* Total Profit Bar */}
-                  <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-3 shadow-sm text-center flex flex-col justify-center">
-                    <span className="text-[10px] text-emerald-800 font-extrabold uppercase tracking-wider block mb-1">Total Profit</span>
-                    <span className="text-lg md:text-xl font-black text-emerald-600 tabular-nums">R{totalProfit.toFixed(2)}</span>
-                    <span className="text-[9px] text-emerald-700 block mt-1 tabular-nums">
-                      {tenantSubApprovedCount + userSubApprovedCount + companySubApprovedCount} active subs
-                    </span>
-                  </div>
-
-                  {/* Ten Bar */}
-                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 shadow-sm text-center flex flex-col justify-center">
-                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mb-1">Ten (Tenant)</span>
-                    <span className="text-lg md:text-xl font-bold text-slate-900 tabular-nums">R{tenantProfit.toFixed(2)}</span>
-                    <span className="text-[9px] text-slate-500 block mt-1 tabular-nums">
-                      {tenantSubApprovedCount}
-                      {myTenantConfig.maxTenantSignups > 0 ? `/${myTenantConfig.maxTenantSignups}` : ''} active
-                    </span>
-                  </div>
-
-                  {/* User Bar */}
-                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 shadow-sm text-center flex flex-col justify-center">
-                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mb-1">User (User Sub)</span>
-                    <span className="text-lg md:text-xl font-bold text-slate-900 tabular-nums">R{userProfit.toFixed(2)}</span>
-                    <span className="text-[9px] text-slate-500 block mt-1 tabular-nums">
-                      {userSubApprovedCount}
-                      {myTenantConfig.maxUserSignups > 0 ? `/${myTenantConfig.maxUserSignups}` : ''} active
-                    </span>
-                  </div>
-
-                  {/* REF Bar */}
-                  <div className="rounded-2xl bg-indigo-50/80 border border-indigo-200 p-3 shadow-sm text-center flex flex-col justify-center">
-                    <span className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider block mb-1">REF (Company)</span>
-                    <span className="text-lg md:text-xl font-bold text-indigo-950 tabular-nums">R{companyProfit.toFixed(2)}</span>
-                    <span className="text-[9px] text-indigo-700 block mt-1 tabular-nums">
-                      {companySubApprovedCount}
-                      {myTenantConfig.maxCompanySignups > 0 ? `/${myTenantConfig.maxCompanySignups}` : ''} active
-                    </span>
-                  </div>
-                </div>
-
-                {/* Live Subscription Earnings Breakdown */}
-                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 mb-3 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
-                      <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-                      <span>Referral Subscription Income</span>
-                    </span>
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100 tabular-nums">
-                      R{totalProfit.toFixed(2)} / month
-                    </span>
-                  </div>
-                  {submissions.filter((s) => s.status === 'approved').length === 0 ? (
-                    <p className="text-[10px] text-slate-400 py-0.5">
-                      No approved subscriber income yet. Review and approve incoming referrals to earn monthly income.
-                    </p>
-                  ) : (
-                    <div className="space-y-1 max-h-16 overflow-y-auto pr-1">
-                      {submissions
-                        .filter((s) => s.status === 'approved')
-                        .map((s) => {
-                          const sCat = getSubCategory(s.subType);
-                          const sFee =
-                            typeof s.feeAmount === 'number'
-                              ? s.feeAmount
-                              : sCat === 'tenant'
-                              ? myTenantConfig.tenantFee
-                              : sCat === 'company'
-                              ? myTenantConfig.companyFee
-                              : myTenantConfig.userFee;
-                          const sTag = sCat === 'tenant' ? 'Tenant' : sCat === 'company' ? 'Company' : 'User';
-                          return (
-                            <div key={s.id} className="flex items-center justify-between p-1.5 rounded-lg bg-white border border-slate-200 text-[10px]">
-                              <div className="flex items-center gap-1.5">
-                                <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
-                                <span className="font-semibold text-slate-800">{s.userName}</span>
-                                <span className="text-slate-400">({sTag})</span>
-                              </div>
-                              <span className="font-bold text-emerald-600 tabular-nums">+R{sFee.toFixed(2)}/mo</span>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
-                </div>
-
-                {/* Tenant Referral Link */}
-                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
-                  <label className="block text-[11px] font-semibold text-slate-700">
-                    {isMainTenant ? 'Main Tenant Referral Link' : 'Tenant Referral Link'}
-                  </label>
-                  <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200 shadow-inner">
-                    <span className="font-mono text-[11px] text-blue-600 truncate mr-2">
-                      {buildReferralUrl(myReferralCode || MAIN_TENANT_REF_CODE)}
-                    </span>
-                    <button
-                      onClick={() => handleCopy(buildReferralUrl(myReferralCode || MAIN_TENANT_REF_CODE), 'tenant')}
-                      className="flex items-center gap-1 px-3 py-1 rounded-lg bg-blue-600 text-white text-[11px] font-bold hover:bg-blue-500 transition shrink-0"
-                    >
-                      {copiedLink === 'tenant' ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                      <span>{copiedLink === 'tenant' ? 'Copied' : 'Copy'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Sign Out option for Tenant (visible when Profile is removed) */}
-                {chosenSubscription === 'tenant' && (
                   <button
-                    onClick={handleSignOut}
-                    className="w-full mt-2 py-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 text-slate-600 text-[11px] font-bold transition flex items-center justify-center gap-1.5"
+                    type="button"
+                    onClick={startCamera}
+                    className="absolute bottom-1 right-1 p-2 bg-sky-600 hover:bg-sky-500 text-white rounded-full shadow-lg transition active:scale-95"
+                    title="Take / Update Face Selfie"
                   >
-                    <LogOut className="h-3.5 w-3.5" />
-                    <span>Sign Out</span>
+                    <Camera className="h-4 w-4" />
                   </button>
-                )}
+                </div>
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="mt-2 text-xs font-semibold text-sky-700 hover:text-sky-600 transition"
+                >
+                  {selfieDataUrl || myAvatarThumb ? 'Change Face Selfie' : 'Take Face Selfie'}
+                </button>
               </div>
-            )}
 
-            {/* PROFILE FEATURE */}
-            {activeTab === 'profile' && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playClickSound();
-                        startCamera();
-                      }}
-                      title="Tap to capture or update your face selfie"
-                      className="relative h-12 w-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center text-xl font-black shadow-lg overflow-hidden shrink-0 hover:ring-2 hover:ring-blue-400 transition"
-                    >
-                      {myAvatarThumb && myAvatarThumb.startsWith('data:image/') ? (
-                        <img src={myAvatarThumb} alt="User Face Selfie" className="h-full w-full object-cover" />
-                      ) : (
-                        <span>{firstName[0] || email[0]?.toUpperCase() || 'U'}{lastName[0] || ''}</span>
-                      )}
-                      <span className="absolute bottom-0 right-0 h-4 w-4 rounded-tl-md bg-slate-900/80 text-white flex items-center justify-center">
-                        <Camera className="h-2.5 w-2.5" />
-                      </span>
-                    </button>
-                    <div>
-                      <h2 className="text-xl font-bold text-slate-900">{firstName} {lastName}</h2>
-                      <p className="text-xs text-slate-500">{email}</p>
-                    </div>
-                  </div>
+              {profileSuccessMsg && (
+                <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold text-center">
+                  {profileSuccessMsg}
+                </div>
+              )}
 
-                  {/* 30-day / Trial countdown timer + Settings & Info in Profile feature */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
-                      <Clock className="h-3.5 w-3.5 text-amber-600" />
-                      <span>{isSubscriptionActive ? timeLeft : mySubmissionStatus === 'pending' ? 'Pending Approval' : 'Subscription Ended'}</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playClickSound();
-                        setActiveTab('settings');
-                      }}
-                      className="h-9 w-9 rounded-xl bg-slate-100 hover:bg-blue-50 hover:text-blue-600 border border-slate-200 text-slate-700 flex items-center justify-center transition"
-                      title="Settings, Help, About & Feedback"
-                    >
-                      <Settings className="h-4 w-4" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playClickSound();
-                        setFeatureInfoTab('profile');
-                      }}
-                      aria-label="Profile Information"
-                      className="h-10 w-10 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 flex items-center justify-center transition active:scale-95"
-                      title="Profile Info"
-                    >
-                      <Info className="h-4 w-4" />
-                    </button>
+              <div className="space-y-4">
+                {/* Email */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Email Address
+                  </label>
+                  <div className="relative flex items-center">
+                    <Mail className="absolute left-3.5 h-4 w-4 text-slate-500" />
+                    <input
+                      type="email"
+                      disabled
+                      value={currentUser?.email || ''}
+                      className="w-full rounded-2xl bg-slate-100 border border-slate-200 py-3 pl-10 pr-4 text-xs text-slate-600 cursor-not-allowed"
+                    />
                   </div>
                 </div>
 
-                <div className="space-y-3 text-xs">
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Name</label>
+                {/* Name & Surname Required */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                      Name <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative flex items-center">
+                      <User className="absolute left-3.5 h-4 w-4 text-slate-500" />
                       <input
                         type="text"
+                        required
                         value={firstName}
                         onChange={(e) => setFirstName(e.target.value)}
-                        onBlur={() => saveProfileFields(firstName, lastName, locationInput)}
-                        className="w-full rounded-xl bg-slate-50 border border-slate-200 p-2.5 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Surname</label>
-                      <input
-                        type="text"
-                        value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
-                        onBlur={() => saveProfileFields(firstName, lastName, locationInput)}
-                        className="w-full rounded-xl bg-slate-50 border border-slate-200 p-2.5 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        placeholder="First Name"
+                        className="w-full rounded-2xl bg-slate-50 border border-slate-300 py-3 pl-10 pr-4 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-600 focus:bg-white transition"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Location</label>
-                    <div className="relative">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={locationInput}
-                          onChange={(e) => handleLocationType(e.target.value)}
-                          onBlur={() => saveProfileFields(firstName, lastName, locationInput)}
-                          placeholder="Type location or address..."
-                          className="w-full rounded-xl bg-slate-50 border border-slate-200 p-2.5 text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                        />
-                        <button
-                          type="button"
-                          onClick={autoDetectLocation}
-                          className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-500 transition shrink-0"
-                          title="Auto-detect location"
-                        >
-                          <Navigation className="h-3.5 w-3.5" />
-                          <span>Detect</span>
-                        </button>
-                      </div>
-
-                      {/* Suggestions Dropdown */}
-                      {locationSuggestions.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 max-h-32 overflow-y-auto rounded-xl bg-white shadow-xl border border-slate-200 z-50">
-                          {locationSuggestions.map((s) => (
-                            <button
-                              key={s.place_id}
-                              type="button"
-                              onClick={() => {
-                                setLocationInput(s.display_name);
-                                setLocationSuggestions([]);
-                                saveProfileFields(firstName, lastName, s.display_name);
-                              }}
-                              className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 border-b border-slate-100 last:border-0"
-                            >
-                              {s.display_name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                      Surname <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative flex items-center">
+                      <User className="absolute left-3.5 h-4 w-4 text-slate-500" />
+                      <input
+                        type="text"
+                        required
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        placeholder="Surname"
+                        className="w-full rounded-2xl bg-slate-50 border border-slate-300 py-3 pl-10 pr-4 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-600 focus:bg-white transition"
+                      />
                     </div>
                   </div>
-
-                  {/* User Sub Link */}
-                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
-                    <label className="block font-semibold text-slate-700">User Sub Link</label>
-                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200 shadow-inner">
-                      <span className="font-mono text-[11px] text-blue-600 truncate mr-2">
-                        {buildReferralUrl(myReferralCode || `ref-${currentUser?.uid.slice(0, 10) || 'user'}`)}
-                      </span>
-                      <button
-                        onClick={() => handleCopy(buildReferralUrl(myReferralCode || `ref-${currentUser?.uid.slice(0, 10) || 'user'}`), 'userSub')}
-                        className="flex items-center gap-1 px-3 py-1 rounded-lg bg-blue-600 text-white text-[11px] font-bold hover:bg-blue-500 transition shrink-0"
-                      >
-                        {copiedLink === 'userSub' ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                        <span>{copiedLink === 'userSub' ? 'Copied' : 'Copy'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleSignOut}
-                    className="w-full py-2.5 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition flex items-center justify-center gap-1.5"
-                  >
-                    <LogOut className="h-3.5 w-3.5" />
-                    <span>Sign Out</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* SETTINGS FEATURE (Sound Toggle, Help, About, Feedback & Info) */}
-            {activeTab === 'settings' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
-                    {chosenSubscription !== 'tenant' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          playClickSound();
-                          setActiveTab('profile');
-                        }}
-                        className="h-9 w-9 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 flex items-center justify-center transition"
-                        title="Back to Profile"
-                      >
-                        <ArrowLeft className="h-4 w-4" />
-                      </button>
-                    )}
-                    <div className="p-2 rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
-                      <Settings className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-bold text-slate-900">Settings</h2>
-                      <p className="text-[11px] text-slate-500">Sounds, Help, About & Feedback</p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playClickSound();
-                      setFeatureInfoTab('settings');
-                    }}
-                    aria-label="Settings Information"
-                    className="h-10 w-10 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white border border-blue-200 hover:border-blue-600 flex items-center justify-center transition shrink-0 active:scale-95"
-                    title="Settings Info"
-                  >
-                    <Info className="h-4 w-4" />
-                  </button>
                 </div>
 
-                {/* Sound Toggle */}
-                <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2.5 rounded-xl border ${
-                      soundEnabled
-                        ? 'bg-blue-50 text-blue-600 border-blue-100'
-                        : 'bg-slate-100 text-slate-400 border-slate-200'
-                    }`}>
-                      {soundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">App Sounds</h3>
-                      <p className="text-[11px] text-slate-500">
-                        {soundEnabled ? 'Plays on clicks, new referrals, seekers & gigs' : 'All click & notification sounds muted'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={soundEnabled}
-                    onClick={toggleSoundEnabled}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      soundEnabled ? 'bg-blue-600' : 'bg-slate-300'
-                    }`}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                        soundEnabled ? 'translate-x-5' : 'translate-x-0'
-                      }`}
+                {/* Location Required */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Location <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative flex items-center">
+                    <MapPin className="absolute left-3.5 h-4 w-4 text-slate-500" />
+                    <input
+                      type="text"
+                      required
+                      value={locationInput}
+                      onChange={(e) => setLocationInput(e.target.value)}
+                      placeholder="City, Province or Area"
+                      className="w-full rounded-2xl bg-slate-50 border border-slate-300 py-3 pl-10 pr-4 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-600 focus:bg-white transition"
                     />
-                  </button>
+                  </div>
                 </div>
 
-                {/* Help, About & Feedback Icons */}
-                <div className="grid grid-cols-3 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playClickSound();
-                      setSettingsHelpOpen(true);
-                    }}
-                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 transition group text-center"
-                  >
-                    <div className="h-11 w-11 rounded-2xl bg-white border border-slate-200 group-hover:border-blue-200 text-blue-600 flex items-center justify-center shadow-sm">
-                      <HelpCircle className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <span className="block text-xs font-bold text-slate-900">Help</span>
-                      <span className="block text-[10px] text-slate-500">How app works</span>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playClickSound();
-                      setSettingsAboutOpen(true);
-                    }}
-                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 transition group text-center"
-                  >
-                    <div className="h-11 w-11 rounded-2xl bg-white border border-slate-200 group-hover:border-emerald-200 text-emerald-600 flex items-center justify-center shadow-sm">
-                      <BookOpen className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <span className="block text-xs font-bold text-slate-900">About</span>
-                      <span className="block text-[10px] text-slate-500">What app is about</span>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playClickSound();
-                      setFeedbackSentSuccess(false);
-                      setFeedbackModalOpen(true);
-                    }}
-                    className="relative flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-slate-50 hover:bg-amber-50 border border-slate-200 hover:border-amber-300 transition group text-center"
-                  >
-                    {myFeedbackList.some((fb) => Boolean(fb.replyMessage)) && (
-                      <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold">
-                        Reply
-                      </span>
-                    )}
-                    <div className="h-11 w-11 rounded-2xl bg-white border border-slate-200 group-hover:border-amber-200 text-amber-600 flex items-center justify-center shadow-sm">
-                      <MessageSquare className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <span className="block text-xs font-bold text-slate-900">Feedback</span>
-                      <span className="block text-[10px] text-slate-500">To Main Tenant</span>
-                    </div>
-                  </button>
+                {/* Contact Information Required */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Contact Information <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative flex items-center">
+                    <Phone className="absolute left-3.5 h-4 w-4 text-slate-500" />
+                    <input
+                      type="tel"
+                      required
+                      value={contactInfo}
+                      onChange={(e) => setContactInfo(e.target.value)}
+                      placeholder="Phone or WhatsApp number"
+                      className="w-full rounded-2xl bg-slate-50 border border-slate-300 py-3 pl-10 pr-4 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-600 focus:bg-white transition"
+                    />
+                  </div>
                 </div>
               </div>
-            )}
+
+              {/* Save Button */}
+              <button
+                type="submit"
+                disabled={isSavingProfile}
+                className="w-full min-h-[44px] py-3.5 rounded-2xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-sky-600/25 transition disabled:opacity-50 flex items-center justify-center gap-2 active:scale-95"
+              >
+                {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                <span>{isSavingProfile ? 'Saving...' : 'Save Profile'}</span>
+              </button>
+            </form>
+
+            {/* User Sub Referral Link */}
+            <div className="p-5 rounded-3xl bg-white/95 border border-sky-200 shadow-xl space-y-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Share2 className="h-4 w-4 text-sky-600" />
+                  <span>User Sub Referral Link</span>
+                </h3>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  Share your User Sub referral link to invite new users. Main Tenant ({MAIN_TENANT_EMAIL}) receives and reviews them directly in Referrals.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="flex-1 rounded-xl bg-slate-100 border border-slate-300 px-3 py-2 text-xs text-slate-800 font-mono truncate select-all">
+                  {typeof window !== 'undefined'
+                    ? `${window.location.origin}?ref=${myReferralCode || 'YOUR_CODE'}`
+                    : `?ref=${myReferralCode || 'YOUR_CODE'}`}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = `${window.location.origin}?ref=${myReferralCode}`;
+                    handleCopy(link, 'profile-user-ref');
+                    playClickSound();
+                  }}
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-md shadow-sky-600/20 active:scale-95 shrink-0"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  <span>{copiedLink === 'profile-user-ref' ? 'Copied Link!' : 'Copy Link'}</span>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = `${window.location.origin}?ref=${myReferralCode}`;
+                    const text = `Join TimeGiG! Sign up with my referral link: ${link}`;
+                    if (navigator.share) {
+                      navigator.share({ title: 'TimeGiG User Referral', text, url: link }).catch(() => {});
+                    } else {
+                      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                    }
+                  }}
+                  className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs flex items-center gap-1.5 transition"
+                >
+                  <Share2 className="h-3.5 w-3.5 text-sky-600" />
+                  <span>Share Link</span>
+                </button>
+                <span className="text-[11px] text-slate-600">
+                  Code: <span className="font-mono font-bold text-sky-700">{myReferralCode || 'N/A'}</span>
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Full-Screen Tenant 3-Bar Menu Overlay with Top Bar Separating Every Section */}
+      {/* Full-Screen Tenant 3-Bar Menu Overlay with Top/Bottom Bar Separating Every Section */}
       {activeTab === 'tenant' && tenantMenuOpen && (
-        <div className="fixed inset-0 z-50 bg-zinc-900/95 backdrop-blur-2xl flex flex-col text-slate-900">
-          <FloatingToolsWallpaper />
+        <div className="fixed inset-0 z-50 bg-gradient-to-br from-gray-100/95 via-gray-200/95 to-slate-300/95 backdrop-blur-2xl flex flex-col text-slate-900">
+          <FloatingToolsWallpaper opacity="opacity-85" />
 
-          {/* Top Bar inside Full-Screen 3-Bar Menu */}
-          <header className="relative z-20 sticky top-0 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 py-3 shadow-sm">
-            <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              {/* Zone 1: Menu Title */}
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2.5 whitespace-nowrap shrink-0">
-                  <div className="h-9 w-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm">
-                    <Menu className="h-4 w-4" />
-                  </div>
-                  <span className="text-sm md:text-base font-extrabold text-slate-900 whitespace-nowrap">
-                    {isMainTenant ? 'Main Tenant Menu' : 'Tenant Menu'}
-                  </span>
-                </div>
 
-                <div className="flex sm:hidden items-center gap-2 shrink-0">
-                  {tenantConfigSavedMsg && (
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold whitespace-nowrap">
-                      {tenantConfigSavedMsg}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playClickSound();
-                      setTenantMenuOpen(false);
-                    }}
-                    className="h-10 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 transition whitespace-nowrap"
-                  >
-                    <X className="h-4 w-4" />
-                    <span>Close</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Zone 2: Separated Section Tabs in the Top Bar */}
-              <nav className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
-                {(
-                  [
-                    { id: 'fees', label: 'Subscription Fees' },
-                    { id: 'trials', label: 'Trial Days' },
-                    { id: 'limits', label: 'Signup Limits' },
-                    { id: 'bank', label: 'Bank Details' },
-                    { id: 'hours', label: 'Working Hours' },
-                  ] as const
-                ).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      playClickSound();
-                      setTenantMenuSection(item.id);
-                    }}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition ${
-                      tenantMenuSection === item.id
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </nav>
-
-              {/* Zone 3: Primary Close / Saved Indicator (Desktop) */}
-              <div className="hidden sm:flex items-center gap-2 shrink-0">
-                {tenantConfigSavedMsg && (
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold whitespace-nowrap">
-                    {tenantConfigSavedMsg}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    playClickSound();
-                    setTenantMenuOpen(false);
-                  }}
-                  className="h-10 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0"
-                >
-                  <X className="h-4 w-4" />
-                  <span>Done</span>
-                </button>
-              </div>
-            </div>
-          </header>
 
           {/* Full-Screen Body Area Showing the Selected Top-Bar Section */}
           <div className="relative z-10 flex-1 overflow-y-auto p-4 md:p-6">
@@ -7523,101 +7917,217 @@ export default function App() {
               )}
             </div>
           </div>
+
+          {/* Bottom Bar inside Full-Screen 3-Bar Menu */}
+          <header className="relative z-20 shrink-0 mt-auto border-t border-b-0 shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.15)] bg-white/95 backdrop-blur-md border-slate-200 px-4 py-3">
+            <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              {/* Zone 1: Menu Title */}
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2.5 whitespace-nowrap shrink-0">
+                  <div className="h-9 w-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm">
+                    <Menu className="h-4 w-4" />
+                  </div>
+                  <span className="text-sm md:text-base font-extrabold text-slate-900 whitespace-nowrap">
+                    {isMainTenant ? 'Main Tenant Menu' : 'Tenant Menu'}
+                  </span>
+                </div>
+
+                <div className="flex sm:hidden items-center gap-2">
+                  {tenantConfigSavedMsg && (
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold whitespace-nowrap">
+                      {tenantConfigSavedMsg}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      setTenantMenuOpen(false);
+                    }}
+                    className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 transition whitespace-nowrap"
+                  >
+                    <X className="h-4 w-4" />
+                    <span>Close</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Zone 2: Separated Section Tabs in the Bottom Bar */}
+              <nav className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
+                {(
+                  [
+                    { id: 'fees', label: 'Subscription Fees' },
+                    { id: 'trials', label: 'Trial Days' },
+                    { id: 'limits', label: 'Signup Limits' },
+                    { id: 'bank', label: 'Bank Details' },
+                    { id: 'hours', label: 'Working Hours' },
+                  ] as const
+                ).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      setTenantMenuSection(item.id);
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition ${
+                      tenantMenuSection === item.id
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+
+              {/* Zone 3: Primary Close / Saved Indicator (Desktop) */}
+              <div className="hidden sm:flex items-center gap-2 shrink-0">
+                {tenantConfigSavedMsg && (
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold whitespace-nowrap">
+                    {tenantConfigSavedMsg}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClickSound();
+                    setTenantMenuOpen(false);
+                  }}
+                  className="h-10 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                  <span>Done</span>
+                </button>
+              </div>
+            </div>
+          </header>
         </div>
       )}
 
-      {/* Upgrade Subscription Modal (Tenant Sub, User Sub & Company Sub) */}
+      {/* Subscription Plan Selection Modal (Single Choice Until Plan Ends) */}
       {upgradeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-md p-4">
-          <div className="relative w-full max-w-[340px] max-h-[88vh] overflow-y-auto rounded-3xl bg-white px-5 py-6 shadow-2xl border border-slate-200 flex flex-col items-center animate-in fade-in zoom-in duration-200">
-            <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-20 blur-[0.5px]">
-              <div className="absolute top-6 left-5 animate-bounce"><Wrench className="h-6 w-6 text-blue-500" /></div>
-              <div className="absolute bottom-8 right-6 animate-pulse"><Hammer className="h-7 w-7 text-indigo-500" /></div>
-              <div className="absolute top-1/2 left-4 animate-bounce"><Zap className="h-5 w-5 text-emerald-500" /></div>
-              <div className="absolute top-1/3 right-5 animate-pulse"><Sparkles className="h-6 w-6 text-amber-500" /></div>
-            </div>
-
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-200/85 backdrop-blur-md p-4">
+          <FloatingToolsWallpaper opacity="opacity-90" />
+          <div className="relative z-10 w-full max-w-[360px] max-h-[88vh] overflow-y-auto rounded-3xl bg-gradient-to-b from-white via-slate-50 to-blue-50/30 p-6 shadow-[0_25px_60px_rgba(15,23,42,0.35)] border border-slate-200/95 flex flex-col items-center animate-in fade-in zoom-in duration-200">
             <button
-              onClick={() => setUpgradeModalOpen(false)}
-              className="absolute top-3.5 right-3.5 z-20 rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+              onClick={() => {
+                setStartupSubChooserDismissed(true);
+                setUpgradeModalOpen(false);
+              }}
+              className="absolute top-4 right-4 z-20 rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
             >
               <X className="h-4 w-4" />
             </button>
 
-            <h2 className="relative z-10 text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
-              <Crown className="h-3.5 w-3.5 text-amber-500" />
-              <span>Upgrade Subscription</span>
-            </h2>
+            <div className="relative z-10 flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md">
+                <Crown className="h-4 w-4" />
+              </div>
+              <h2 className="text-sm font-black uppercase tracking-wider text-slate-900">
+                Choose Subscription Plan
+              </h2>
+            </div>
+
+            {isSubscriptionEnded && (
+              <div className="relative z-10 w-full mb-3 rounded-2xl bg-rose-50 border border-rose-200 p-3 text-center text-[11px] font-bold text-rose-800">
+                Your previous subscription has ended. Choose which subscription plan to activate again.
+              </div>
+            )}
+
+            {isSubscriptionLocked && (
+              <div className="relative z-10 w-full mb-3 rounded-2xl bg-blue-50 border border-blue-200 p-3 text-center text-[11px] font-bold text-blue-900">
+                Active Subscription Locked: You cannot switch plans until your current subscription ends.
+              </div>
+            )}
 
             {/* Urgent Tenant Spots Reminder */}
-            <div className="relative z-10 w-full mb-3 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-600 p-2.5 text-white shadow-md text-center">
-              <div className="flex items-center justify-center gap-1 text-[11px] font-black uppercase tracking-wider">
-                <Sparkles className="h-3.5 w-3.5 text-yellow-200 animate-spin duration-3000" />
-                <span>Tenant spots are running out quickly!</span>
+            <div className="relative z-10 w-full mb-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-600 p-3 text-white shadow-lg text-center">
+              <div className="flex items-center justify-center gap-1.5 text-xs font-black uppercase tracking-wider">
+                <Sparkles className="h-4 w-4 text-yellow-200 animate-spin duration-3000" />
+                <span>Tenant spots running out quickly!</span>
               </div>
-              <p className="text-[10px] text-amber-100 font-medium mt-0.5">
+              <p className="text-[11px] text-amber-100 font-medium mt-0.5">
                 {offerConfig.maxTenantSignups > 0
-                  ? `Hurry! Only ${Math.max(0, offerConfig.maxTenantSignups - offerConfig.currentTenantSignups)} of ${offerConfig.maxTenantSignups} spots remain.`
-                  : 'High demand — Tenant slots are filling fast. Secure your spot now to earn monthly referral profits.'}
+                  ? `Only ${Math.max(0, offerConfig.maxTenantSignups - offerConfig.currentTenantSignups)} of ${offerConfig.maxTenantSignups} spots remain.`
+                  : 'Choose 1 plan now. Once your subscription ends, you can decide again.'}
               </p>
             </div>
 
-            <div className="relative z-10 flex flex-col items-center gap-3.5 w-full">
+            <div className="relative z-10 flex flex-col items-center gap-4 w-full">
               {/* Box 1: Tenant Sub */}
               {(() => {
                 const isTenantFull =
                   offerConfig.maxTenantSignups > 0 &&
                   offerConfig.currentTenantSignups >= offerConfig.maxTenantSignups;
+                const isLockedOther = isSubscriptionLocked && chosenSubscription !== 'tenant';
+                const isLockedCurrent =
+                  isSubscriptionLocked &&
+                  chosenSubscription === 'tenant' &&
+                  (mySubmissionStatus !== 'none' || hasActiveTrial);
+                const isDisabled = isTenantFull || isLockedOther || isLockedCurrent;
+
                 return (
                   <div
-                    onClick={() => !isTenantFull && handleSelectSubTier('Tenant Sub (R299.99)')}
-                    className={`w-full rounded-2xl bg-white border-2 shadow-md transition p-3.5 flex flex-col items-center gap-2 text-center ${
-                      isTenantFull
-                        ? 'opacity-60 cursor-not-allowed border-slate-200'
-                        : 'cursor-pointer border-slate-300 hover:border-blue-600 hover:shadow-xl'
+                    onClick={() => !isDisabled && handleSelectSubTier('Tenant Sub (R299.99)')}
+                    className={`w-full rounded-2xl bg-gradient-to-br from-white via-slate-50 to-blue-50/60 border-2 p-4 flex flex-col items-center gap-3 text-center transition-all duration-300 relative overflow-hidden group ${
+                      isDisabled
+                        ? 'opacity-65 cursor-not-allowed border-slate-200 shadow-sm'
+                        : startupIntentChoice === 'tenant'
+                        ? 'cursor-pointer border-blue-600 ring-2 ring-blue-500/30 shadow-[0_14px_34px_rgba(37,99,235,0.25)] transform hover:-translate-y-1'
+                        : 'cursor-pointer border-blue-200 hover:border-blue-600 shadow-[0_12px_30px_rgba(37,99,235,0.18),inset_0_1px_2px_rgba(255,255,255,1)] hover:shadow-[0_20px_45px_rgba(37,99,235,0.3)] transform hover:-translate-y-1'
                     }`}
                   >
-                    {/* Urgency Pill Badge */}
                     <div className="w-full flex items-center justify-between px-1">
-                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-wider animate-pulse flex items-center gap-1 shadow-sm">
-                        <Zap className="h-2.5 w-2.5" /> Spots Running Out Fast
+                      <span className="px-2.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-wider animate-pulse flex items-center gap-1 shadow">
+                        <Zap className="h-2.5 w-2.5" /> High Demand
                       </span>
-                      {offerConfig.maxTenantSignups > 0 && (
+                      {startupIntentChoice === 'tenant' && !isSubscriptionLocked ? (
+                        <span className="text-[10px] font-black text-blue-700">Recommended</span>
+                      ) : offerConfig.maxTenantSignups > 0 ? (
                         <span className="text-[10px] font-black text-rose-600 tabular-nums">
-                          {Math.max(0, offerConfig.maxTenantSignups - offerConfig.currentTenantSignups)} left!
+                          {Math.max(0, offerConfig.maxTenantSignups - offerConfig.currentTenantSignups)} spots left
                         </span>
-                      )}
+                      ) : null}
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
-                        <Building2 className="h-4 w-4" />
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md">
+                        <Building2 className="h-5 w-5" />
                       </div>
                       <div className="text-left">
-                        <h3 className="text-xs font-bold text-slate-900">Tenant Sub</h3>
-                        <span className="text-sm font-black text-slate-900 tabular-nums">
+                        <h3 className="text-sm font-extrabold text-slate-900">Tenant Sub</h3>
+                        <span className="text-base font-black text-blue-600 tabular-nums">
                           R{offerConfig.tenantFee.toFixed(2)}
-                          <span className="text-[10px] text-slate-500 font-normal">/mo</span>
+                          <span className="text-[11px] text-slate-500 font-normal">/mo</span>
                         </span>
                       </div>
                     </div>
-                    <p className="text-[10px] text-slate-500 leading-tight">
+
+                    <p className="text-[11px] text-slate-600 leading-snug">
                       {isTenantFull
                         ? `Signups full (${offerConfig.currentTenantSignups}/${offerConfig.maxTenantSignups})`
-                        : offerConfig.trialDays > 0 && !myTrialEndsAt
-                        ? `Includes ${offerConfig.trialDays}-day free trial`
-                        : 'Earn passive monthly income from referrals'}
+                        : 'Earn passive monthly income from user referral subscriptions'}
                     </p>
+
                     <button
                       type="button"
-                      disabled={isTenantFull}
+                      disabled={isDisabled}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleSelectSubTier('Tenant Sub (R299.99)');
                       }}
-                      className="w-full py-1.5 rounded-lg bg-blue-600 text-white text-[11px] font-bold hover:bg-blue-500 shadow-sm transition disabled:opacity-50"
+                      className="w-full py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-500 shadow-md shadow-blue-600/30 transition disabled:opacity-50"
                     >
-                      {isTenantFull ? 'Limit Reached' : 'Select Tenant Sub'}
+                      {isLockedCurrent
+                        ? 'Current Active Plan'
+                        : isLockedOther
+                        ? 'Locked Until Plan Ends'
+                        : isTenantFull
+                        ? 'Limit Reached'
+                        : chosenSubscription === 'tenant' && isSubscriptionLocked
+                        ? 'Continue Verification'
+                        : 'Select Tenant Sub'}
                     </button>
                   </div>
                 );
@@ -7628,92 +8138,66 @@ export default function App() {
                 const isUserFull =
                   offerConfig.maxUserSignups > 0 &&
                   offerConfig.currentUserSignups >= offerConfig.maxUserSignups;
+                const isLockedOther = isSubscriptionLocked && chosenSubscription !== 'user';
+                const isLockedCurrent =
+                  isSubscriptionLocked &&
+                  chosenSubscription === 'user' &&
+                  (mySubmissionStatus !== 'none' || hasActiveTrial);
+                const isDisabled = isUserFull || isLockedOther || isLockedCurrent;
+
                 return (
                   <div
-                    onClick={() => !isUserFull && handleSelectSubTier('User Sub (R29.99)')}
-                    className={`w-full rounded-2xl bg-white border-2 shadow-md transition p-3.5 flex flex-col items-center gap-2 text-center ${
-                      isUserFull
-                        ? 'opacity-60 cursor-not-allowed border-slate-200'
-                        : 'cursor-pointer border-slate-300 hover:border-purple-600 hover:shadow-xl'
+                    onClick={() => !isDisabled && handleSelectSubTier('User Sub (R29.99)')}
+                    className={`w-full rounded-2xl bg-gradient-to-br from-white via-slate-50 to-purple-50/60 border-2 p-4 flex flex-col items-center gap-3 text-center transition-all duration-300 relative overflow-hidden group ${
+                      isDisabled
+                        ? 'opacity-65 cursor-not-allowed border-slate-200 shadow-sm'
+                        : startupIntentChoice === 'gig'
+                        ? 'cursor-pointer border-purple-600 ring-2 ring-purple-500/30 shadow-[0_14px_34px_rgba(147,51,234,0.22)] transform hover:-translate-y-1'
+                        : 'cursor-pointer border-purple-200 hover:border-purple-600 shadow-[0_12px_30px_rgba(147,51,234,0.15),inset_0_1px_2px_rgba(255,255,255,1)] hover:shadow-[0_20px_45px_rgba(147,51,234,0.25)] transform hover:-translate-y-1'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 rounded-xl bg-purple-50 text-purple-600 border border-purple-100">
-                        <User className="h-4 w-4" />
+                    {startupIntentChoice === 'gig' && !isSubscriptionLocked && (
+                      <div className="w-full text-right px-1">
+                        <span className="text-[10px] font-black text-purple-700">Recommended for Posting Gigs</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white shadow-md">
+                        <User className="h-5 w-5" />
                       </div>
                       <div className="text-left">
-                        <h3 className="text-xs font-bold text-slate-900">User Sub</h3>
-                        <span className="text-sm font-black text-slate-900 tabular-nums">
+                        <h3 className="text-sm font-extrabold text-slate-900">User Sub</h3>
+                        <span className="text-base font-black text-purple-600 tabular-nums">
                           R{offerConfig.userFee.toFixed(2)}
-                          <span className="text-[10px] text-slate-500 font-normal">/mo</span>
+                          <span className="text-[11px] text-slate-500 font-normal">/mo</span>
                         </span>
                       </div>
                     </div>
-                    <p className="text-[10px] text-slate-500 leading-tight">
+
+                    <p className="text-[11px] text-slate-600 leading-snug">
                       {isUserFull
                         ? `Signups full (${offerConfig.currentUserSignups}/${offerConfig.maxUserSignups})`
-                        : offerConfig.trialDays > 0 && !myTrialEndsAt
-                        ? `Includes ${offerConfig.trialDays}-day free trial`
-                        : 'Use the app & stay active monthly'}
+                        : 'Post gigs, hire seekers & refer new users'}
                     </p>
+
                     <button
                       type="button"
-                      disabled={isUserFull}
+                      disabled={isDisabled}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleSelectSubTier('User Sub (R29.99)');
                       }}
-                      className="w-full py-1.5 rounded-lg bg-purple-600 text-white text-[11px] font-bold hover:bg-purple-500 shadow-sm transition disabled:opacity-50"
+                      className="w-full py-2.5 rounded-xl bg-purple-600 text-white text-xs font-bold hover:bg-purple-500 shadow-md shadow-purple-600/30 transition disabled:opacity-50"
                     >
-                      {isUserFull ? 'Limit Reached' : 'Select User Sub'}
-                    </button>
-                  </div>
-                );
-              })()}
-
-              {/* Box 3: Company Sub */}
-              {(() => {
-                const isCompanyFull =
-                  offerConfig.maxCompanySignups > 0 &&
-                  offerConfig.currentCompanySignups >= offerConfig.maxCompanySignups;
-                return (
-                  <div
-                    onClick={() => !isCompanyFull && handleSelectSubTier('Company Sub (R199.99)')}
-                    className={`w-full rounded-2xl bg-white border-2 shadow-md transition p-3.5 flex flex-col items-center gap-2 text-center ${
-                      isCompanyFull
-                        ? 'opacity-60 cursor-not-allowed border-slate-200'
-                        : 'cursor-pointer border-indigo-200 hover:border-indigo-600 hover:shadow-xl'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100">
-                        <Store className="h-4 w-4" />
-                      </div>
-                      <div className="text-left">
-                        <h3 className="text-xs font-bold text-slate-900">Company Sub</h3>
-                        <span className="text-sm font-black text-slate-900 tabular-nums">
-                          R{offerConfig.companyFee.toFixed(2)}
-                          <span className="text-[10px] text-slate-500 font-normal">/mo</span>
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-slate-500 leading-tight">
-                      {isCompanyFull
-                        ? `Company signups full (${offerConfig.currentCompanySignups}/${offerConfig.maxCompanySignups})`
-                        : offerConfig.companyTrialDays > 0 && !myTrialEndsAt
-                        ? `Includes ${offerConfig.companyTrialDays}-day free trial for companies`
-                        : 'Company Page, map pin & customer reservations'}
-                    </p>
-                    <button
-                      type="button"
-                      disabled={isCompanyFull}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectSubTier('Company Sub (R199.99)');
-                      }}
-                      className="w-full py-1.5 rounded-lg bg-indigo-600 text-white text-[11px] font-bold hover:bg-indigo-500 shadow-sm transition disabled:opacity-50"
-                    >
-                      {isCompanyFull ? 'Limit Reached' : 'Select Company Sub'}
+                      {isLockedCurrent
+                        ? 'Current Active Plan'
+                        : isLockedOther
+                        ? 'Locked Until Plan Ends'
+                        : isUserFull
+                        ? 'Limit Reached'
+                        : chosenSubscription === 'user' && isSubscriptionLocked
+                        ? 'Continue Verification'
+                        : 'Select User Sub'}
                     </button>
                   </div>
                 );
@@ -7723,123 +8207,114 @@ export default function App() {
         </div>
       )}
 
-      {/* Onboarding Verification Modal (Face Selfie, ID, POP & Submit Review) */}
+      {/* Advanced & Simple Verification & Onboarding Modal (Any Size File Support) */}
       {onboardingModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-md p-4">
-          <div className="relative w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4">
+          <div className="relative w-full max-w-lg rounded-3xl bg-white p-6 md:p-8 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 max-h-[92vh] overflow-y-auto">
             <button
               onClick={() => setOnboardingModalOpen(false)}
-              className="absolute top-4 right-4 rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+              className="absolute top-4 right-4 rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
             >
-              <X className="h-4 w-4" />
+              <X className="h-5 w-5" />
             </button>
 
-            <div className="mb-4 text-center">
-              <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-wider">
+            <div className="mb-5 text-center">
+              <span className="px-3.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-extrabold uppercase tracking-wider">
                 {selectedSubTier?.includes('Tenant')
                   ? `Tenant Sub (R${offerConfig.tenantFee.toFixed(2)}/mo)`
                   : selectedSubTier?.includes('Company')
                   ? `Company Sub (R${offerConfig.companyFee.toFixed(2)}/mo)`
                   : `User Sub (R${offerConfig.userFee.toFixed(2)}/mo)`}
               </span>
-              <h2 className="text-lg font-bold text-slate-900 mt-2">Verification & Onboarding</h2>
-              <p className="text-xs text-slate-500">
-                Capture face selfie, upload ID documents & proof of payment
+              <h2 className="text-xl font-black text-slate-900 mt-2">Verification &amp; Onboarding</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Complete 3 simple steps to activate your subscription and secure your account
               </p>
             </div>
 
             {selectedSubTier?.includes('Tenant') && (
-              <div className="mb-4 p-3 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 flex items-center gap-2.5 text-xs text-amber-950 shadow-sm">
-                <Sparkles className="h-4 w-4 text-amber-600 shrink-0" />
+              <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 flex items-center gap-3 text-xs text-amber-950 shadow-sm">
+                <Sparkles className="h-5 w-5 text-amber-600 shrink-0" />
                 <div className="min-w-0">
-                  <span className="font-bold block text-[11px] uppercase tracking-wide text-amber-900">
+                  <span className="font-bold block text-xs uppercase tracking-wide text-amber-900">
                     Tenant Spot Temporarily Held!
                   </span>
-                  <span className="text-[10px] text-amber-800 block mt-0.5">
-                    Tenant spots are running out quickly. Submit your verification now to finalize and secure your spot before registration fills up.
+                  <span className="text-[11px] text-amber-800 block mt-0.5">
+                    Tenant spots are running out quickly. Submit your verification now to finalize and secure your spot.
                   </span>
                 </div>
-              </div>
-            )}
-
-            {((selectedSubTier?.includes('Company') ? offerConfig.companyTrialDays : offerConfig.trialDays) > 0) && !myTrialEndsAt && (
-              <div className="mb-4 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2 text-xs">
-                <div>
-                  <h4 className="font-bold text-emerald-900">
-                    {selectedSubTier?.includes('Company') ? offerConfig.companyTrialDays : offerConfig.trialDays}-Day Free Trial Available
-                  </h4>
-                  <p className="text-[10px] text-emerald-700">
-                    Activate immediately for {selectedSubTier?.includes('Company') ? offerConfig.companyTrialDays : offerConfig.trialDays} days
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={isStartingTrial}
-                  onClick={handleStartFreeTrial}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition shrink-0 flex items-center gap-1 disabled:opacity-50"
-                >
-                  {isStartingTrial && <Loader2 className="h-3 w-3 animate-spin" />}
-                  <span>Start Free Trial</span>
-                </button>
               </div>
             )}
 
             <form onSubmit={handleFinalSubmitReview} className="space-y-4 text-xs">
+              {/* Step Indicator Header */}
+              <div className="grid grid-cols-3 gap-2 pb-2 border-b border-slate-100 text-[11px] font-bold text-slate-600 text-center">
+                <div className={`p-2 rounded-xl border ${selfieCaptured ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-blue-50 border-blue-300 text-blue-800'}`}>
+                  1. Face Selfie {selfieCaptured ? '✓' : ''}
+                </div>
+                <div className={`p-2 rounded-xl border ${idUploaded ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                  2. ID Document {idUploaded ? '✓' : ''}
+                </div>
+                <div className={`p-2 rounded-xl border ${popUploaded ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                  3. POP Receipt {popUploaded ? '✓' : ''}
+                </div>
+              </div>
+
               {/* Step 1: Live Face Selfie */}
-              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-3">
                   {selfieDataUrl ? (
-                    <img src={selfieDataUrl} alt="Selfie" className="h-10 w-10 rounded-xl object-cover border border-slate-300" />
+                    <img src={selfieDataUrl} alt="Selfie" className="h-12 w-12 rounded-xl object-cover border-2 border-emerald-500 shadow-sm" />
                   ) : (
-                    <div className="p-2 rounded-xl bg-blue-100 text-blue-700">
-                      <Camera className="h-4 w-4" />
+                    <div className="h-12 w-12 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                      <Camera className="h-5 w-5" />
                     </div>
                   )}
                   <div>
-                    <h4 className="font-semibold text-slate-900">Live Face Selfie</h4>
-                    <p className="text-[10px] text-slate-500">{selfieCaptured ? 'Selfie captured successfully' : 'Required for identity verification'}</p>
+                    <h4 className="font-bold text-slate-900 text-sm">Step 1: Live Face Selfie</h4>
+                    <p className="text-[11px] text-slate-500">{selfieCaptured ? 'Captured & verified successfully' : 'Capture clear face selfie for your profile card'}</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={startCamera}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition ${
-                    selfieCaptured ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-blue-600 text-white hover:bg-blue-500'
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition shadow-sm ${
+                    selfieCaptured ? 'bg-emerald-600 text-white hover:bg-emerald-500' : 'bg-blue-600 text-white hover:bg-blue-500'
                   }`}
                 >
-                  {selfieCaptured ? 'Retake' : 'Capture'}
+                  {selfieCaptured ? 'Retake Selfie' : 'Capture Selfie'}
                 </button>
               </div>
 
-              {/* Step 2: Upload ID Documents */}
-              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                <div className="flex items-center gap-2.5 min-w-0">
+              {/* Step 2: ID Document Upload (Any Size) */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-3 min-w-0">
                   {idDocFile?.url && idDocFile.type.startsWith('image/') ? (
-                    <img src={idDocFile.url} alt="ID preview" className="h-10 w-10 rounded-xl object-cover border border-purple-300 shrink-0" />
+                    <img src={idDocFile.url} alt="ID preview" className="h-12 w-12 rounded-xl object-cover border-2 border-purple-500 shrink-0 shadow-sm" />
                   ) : (
-                    <div className="p-2 rounded-xl bg-purple-100 text-purple-700 shrink-0">
-                      {idDocFile ? <FileText className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+                    <div className="h-12 w-12 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                      {idDocFile ? <FileText className="h-5 w-5" /> : <Upload className="h-5 w-5" />}
                     </div>
                   )}
-                  <div className="truncate">
-                    <h4 className="font-semibold text-slate-900">ID Document</h4>
-                    <p className="text-[10px] text-slate-500 truncate">
-                      {idDocFile ? `${idDocFile.name} (${idDocFile.size})` : 'Passport, ID card or Driver Licence'}
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-slate-900 text-sm">Step 2: ID Document</h4>
+                    <p className="text-[11px] text-slate-500 truncate">
+                      {idDocFile ? `${idDocFile.name} (${idDocFile.size})` : 'Passport, ID card or Driver Licence (Any size)'}
                     </p>
                   </div>
                 </div>
-                <label className="cursor-pointer px-3 py-1.5 rounded-xl bg-purple-600 text-white text-[11px] font-bold hover:bg-purple-500 transition shrink-0 ml-2">
-                  <span>{idUploaded ? 'Change' : 'Upload'}</span>
+                <label className="cursor-pointer px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold hover:bg-purple-500 transition shrink-0 ml-2 shadow-sm">
+                  <span>{idUploaded ? 'Change File' : 'Upload ID'}</span>
                   <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleIdFileUpload} />
                 </label>
               </div>
 
-              {/* Bank Transfer Details for Payment */}
-              <div className="p-3 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-1.5">
+              {/* Bank Transfer Details Box */}
+              <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 space-y-2 shadow-sm">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-blue-950 flex items-center gap-1.5">
-                    <Building2 className="h-3.5 w-3.5 text-blue-600" />
-                    <span>Bank Transfer Details</span>
+                  <h4 className="font-bold text-blue-950 flex items-center gap-1.5 text-xs">
+                    <Building2 className="h-4 w-4 text-blue-600" />
+                    <span>Bank Transfer Payment Details</span>
                   </h4>
                   {offerConfig.bankAccountNumber && (
                     <button
@@ -7849,15 +8324,15 @@ export default function App() {
                         setCopiedBankAcct(true);
                         setTimeout(() => setCopiedBankAcct(false), 2000);
                       }}
-                      className="px-2 py-0.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold flex items-center gap-1 transition"
+                      className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold flex items-center gap-1 transition shadow-sm"
                     >
                       {copiedBankAcct ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                      <span>{copiedBankAcct ? 'Copied' : 'Copy Acc'}</span>
+                      <span>{copiedBankAcct ? 'Copied Account' : 'Copy Account'}</span>
                     </button>
                   )}
                 </div>
                 {offerConfig.bankName || offerConfig.bankAccountNumber || offerConfig.bankAccountHolder ? (
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-slate-700 pt-0.5">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-700 pt-1">
                     {offerConfig.bankName && (
                       <div>
                         <span className="text-slate-500">Bank: </span>
@@ -7891,67 +8366,256 @@ export default function App() {
                   </div>
                 ) : (
                   <p className="text-[11px] text-blue-800">
-                    Ask your referrer tenant for bank transfer details before uploading Proof of Payment.
+                    Please use your referrer tenant bank transfer details to make payment before uploading Proof of Payment.
                   </p>
                 )}
               </div>
 
-              {/* Step 3: Proof of Payment */}
-              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                <div className="flex items-center gap-2.5 min-w-0">
+              {/* Step 3: Proof of Payment (Any Size) */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-3 min-w-0">
                   {popDocFile?.url && popDocFile.type.startsWith('image/') ? (
-                    <img src={popDocFile.url} alt="POP preview" className="h-10 w-10 rounded-xl object-cover border border-emerald-300 shrink-0" />
+                    <img src={popDocFile.url} alt="POP preview" className="h-12 w-12 rounded-xl object-cover border-2 border-emerald-500 shrink-0 shadow-sm" />
                   ) : (
-                    <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700 shrink-0">
-                      {popDocFile ? <FileText className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+                    <div className="h-12 w-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                      {popDocFile ? <FileText className="h-5 w-5" /> : <Upload className="h-5 w-5" />}
                     </div>
                   )}
-                  <div className="truncate">
-                    <h4 className="font-semibold text-slate-900">Proof of Payment</h4>
-                    <p className="text-[10px] text-slate-500 truncate">
-                      {popDocFile ? `${popDocFile.name} (${popDocFile.size})` : 'Bank EFT receipt or POP slip'}
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-slate-900 text-sm">Step 3: Proof of Payment</h4>
+                    <p className="text-[11px] text-slate-500 truncate">
+                      {popDocFile ? `${popDocFile.name} (${popDocFile.size})` : 'EFT receipt or POP slip (Any size)'}
                     </p>
                   </div>
                 </div>
-                <label className="cursor-pointer px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-500 transition shrink-0 ml-2">
-                  <span>{popUploaded ? 'Change' : 'Upload'}</span>
+                <label className="cursor-pointer px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition shrink-0 ml-2 shadow-sm">
+                  <span>{popUploaded ? 'Change File' : 'Upload POP'}</span>
                   <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handlePopFileUpload} />
                 </label>
               </div>
 
-              <div className="rounded-xl bg-amber-50 p-3 border border-amber-200 text-amber-800 text-[11px] flex items-start gap-2">
-                <Clock className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="rounded-2xl bg-amber-50 p-3.5 border border-amber-200 text-amber-900 text-xs flex items-center gap-2.5">
+                <Clock className="h-4 w-4 text-amber-600 shrink-0" />
                 <span>Review takes about 15 to 25 minutes after submission by your referrer tenant.</span>
               </div>
 
               <button
                 type="submit"
                 disabled={!selfieCaptured || !idUploaded || !popUploaded || isSubmittingReview}
-                className="w-full py-3 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-500 shadow-lg shadow-blue-600/30 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-3.5 rounded-2xl bg-blue-600 text-white text-sm font-extrabold hover:bg-blue-500 shadow-xl shadow-blue-600/30 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                {isSubmittingReview && <Loader2 className="h-4 w-4 animate-spin" />}
-                <span>Submit for Review (15-25 mins)</span>
+                {isSubmittingReview && <Loader2 className="h-5 w-5 animate-spin" />}
+                <span>Submit Verification for Review (15-25 mins)</span>
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* Auth Modal */}
-      {authModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200">
-            <button
-              onClick={() => setAuthModalOpen(false)}
-              className="absolute top-4 right-4 rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            <div className="mb-6 text-center">
-              <h2 className="text-xl font-bold text-slate-900">Sign In / Sign Up</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Sign in to unlock Tenant, Referrals, GiGs & Seekers features
+      {/* Startup Intent Prompt (New Signups Only: Post a Gig vs Become a Tenant, plus Already Registered Login) */}
+      {startupIntentOpen && !isAuthenticated && (
+        <div className="fixed inset-0 z-55 flex items-center justify-center bg-gray-200/85 backdrop-blur-md p-4">
+          <FloatingToolsWallpaper opacity="opacity-95" />
+          <div className="relative z-10 w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl bg-white/95 p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in duration-200">
+            <div className="text-center space-y-1.5">
+              <span className="text-xs font-extrabold uppercase tracking-widest text-blue-600">TimeGiG</span>
+              <h2 className="text-2xl font-black text-slate-900">What would you like to do?</h2>
+              <p className="text-xs text-slate-600">
+                Choose your goal to sign up, or log in directly if you already have an account.
               </p>
+              {pendingRefCode && (
+                <p className="text-[11px] font-semibold text-emerald-700 pt-0.5">
+                  Referral code attached: {pendingRefCode}
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <button
+                type="button"
+                onClick={() => {
+                  playClickSound();
+                  setStartupIntentChoice('gig');
+                  setHasCompletedStartupIntent(true);
+                  setStartupIntentOpen(false);
+                  setAuthTab('signup');
+                  setAuthError(null);
+                  setAuthModalOpen(true);
+                }}
+                className="min-h-[120px] rounded-2xl bg-slate-50 hover:bg-blue-50 border-2 border-slate-200 hover:border-blue-600 p-4 text-left flex flex-col justify-between gap-3 transition shadow-sm active:scale-[0.98]"
+              >
+                <div className="h-11 w-11 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-600/25">
+                  <Zap className="h-5 w-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-black text-slate-900">Post a Gig</h3>
+                  <p className="text-[11px] text-slate-600 leading-snug">
+                    Post gigs on the map, hire local seekers for services, and manage jobs.
+                  </p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  playClickSound();
+                  setStartupIntentChoice('tenant');
+                  setHasCompletedStartupIntent(true);
+                  setStartupIntentOpen(false);
+                  setAuthTab('signup');
+                  setAuthError(null);
+                  setAuthModalOpen(true);
+                }}
+                className="min-h-[120px] rounded-2xl bg-slate-50 hover:bg-amber-50 border-2 border-slate-200 hover:border-amber-500 p-4 text-left flex flex-col justify-between gap-3 transition shadow-sm active:scale-[0.98]"
+              >
+                <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white flex items-center justify-center shadow-md shadow-amber-500/25">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-black text-slate-900">Become a Tenant</h3>
+                  <p className="text-[11px] text-slate-600 leading-snug">
+                    Earn a passive monthly income through user referral subscriptions.
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            <div className="pt-2 border-t border-slate-200 flex flex-col items-center gap-2 text-center">
+              <p className="text-[11px] text-slate-500">Already registered on TimeGiG?</p>
+              <button
+                type="button"
+                onClick={() => {
+                  playClickSound();
+                  setStartupIntentChoice(null);
+                  setHasCompletedStartupIntent(true);
+                  setStartupIntentOpen(false);
+                  setAuthTab('signin');
+                  setAuthError(null);
+                  setAuthModalOpen(true);
+                }}
+                className="w-full min-h-[44px] rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-md transition"
+              >
+                Already Registered? Login
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Congratulations Modal After New Signup & Terms Acceptance */}
+      {congratsModalOpen && (
+        <div className="fixed inset-0 z-55 flex items-center justify-center bg-gray-200/85 backdrop-blur-md p-4">
+          <FloatingToolsWallpaper opacity="opacity-95" />
+          <div className="relative z-10 w-full max-w-md rounded-3xl bg-white p-7 shadow-2xl border border-slate-200 text-center space-y-4 animate-in fade-in zoom-in duration-200">
+            <div className="mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-600/25 flex items-center justify-center">
+              <PartyPopper className="h-8 w-8" />
+            </div>
+            <div className="space-y-1.5">
+              <h2 className="text-2xl font-black text-slate-900">Congratulations!</h2>
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                Welcome to <span className="font-bold text-slate-900">TimeGiG</span>! Your account has been created and you have accepted our Terms &amp; Conditions.
+              </p>
+              {(activeReferrer?.code || pendingRefCode) && (
+                <p className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+                  Referral attached: {activeReferrer?.code || pendingRefCode}
+                </p>
+              )}
+            </div>
+            <p className="text-xs text-slate-500">
+              Next, choose 1 subscription plan to activate your access. You cannot switch plans mid-term, and when your subscription ends you can decide again.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                playClickSound();
+                setCongratsModalOpen(false);
+                setStartupSubChooserDismissed(false);
+                setUpgradeModalOpen(true);
+              }}
+              className="w-full min-h-[46px] rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-blue-600/30 transition"
+            >
+              Continue to Subscription Plans
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Auth Modal (Signup / Signin with Mandatory T&C on New Signup) */}
+      {authModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-200/85 backdrop-blur-md p-4">
+          {!isAuthenticated && <FloatingToolsWallpaper opacity="opacity-95" />}
+          <div className="relative z-10 w-full max-w-md max-h-[92vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200">
+            {isAuthenticated && (
+              <button
+                onClick={() => setAuthModalOpen(false)}
+                className="absolute top-4 right-4 rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+            {/* Mode Switcher Tabs */}
+            <div className="mb-5 flex rounded-2xl bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthTab('signup');
+                  setAuthError(null);
+                }}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${
+                  authTab === 'signup'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Sign Up
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthTab('signin');
+                  setAuthError(null);
+                }}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${
+                  authTab === 'signin'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Sign In
+              </button>
+            </div>
+
+            <div className="mb-4 text-center">
+              <h2 className="text-xl font-bold text-slate-900">
+                {authTab === 'signup' ? 'Create Your Account' : 'Welcome Back'}
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                {authTab === 'signup'
+                  ? pendingRefCode
+                    ? 'New referral! Sign up and accept Terms & Conditions to continue.'
+                    : 'Sign up and accept Terms & Conditions to choose your subscription plan.'
+                  : 'Already registered? Sign in to access your account.'}
+              </p>
+              {authTab === 'signup' && startupIntentChoice && (
+                <div className="mt-2 inline-flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 px-3 py-1 text-[11px] font-bold text-blue-800">
+                  <span>
+                    Goal: {startupIntentChoice === 'tenant' ? 'Become a Tenant (Passive Income)' : 'Post a Gig'}
+                  </span>
+                  {!isAuthenticated && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthModalOpen(false);
+                        setHasCompletedStartupIntent(false);
+                        setStartupIntentOpen(true);
+                      }}
+                      className="underline text-blue-600 hover:text-blue-700"
+                    >
+                      Change
+                    </button>
+                  )}
+                </div>
+              )}
               {pendingRefCode && (
                 <p className="text-[11px] font-semibold text-blue-600 mt-1.5">
                   Referral code attached: {pendingRefCode}
@@ -7975,8 +8639,8 @@ export default function App() {
                 </div>
                 <p className="text-[10px] text-amber-900 leading-snug mt-0.5">
                   {offerConfig.maxTenantSignups > 0
-                    ? `Only ${Math.max(0, offerConfig.maxTenantSignups - offerConfig.currentTenantSignups)} of ${offerConfig.maxTenantSignups} spots remain before registration closes. Sign up now to secure your monthly referral earnings.`
-                    : 'Limited spots available. New signup users can claim a Tenant spot to earn monthly income from referred users and businesses.'}
+                    ? `Only ${Math.max(0, offerConfig.maxTenantSignups - offerConfig.currentTenantSignups)} of ${offerConfig.maxTenantSignups} spots remain before registration closes.`
+                    : 'Limited spots available. Sign up now and select your subscription plan.'}
                 </p>
               </div>
             </div>
@@ -7989,6 +8653,46 @@ export default function App() {
             )}
 
             <div className="space-y-4">
+              {authTab === 'signup' && (
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 space-y-2 text-left">
+                  <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={acceptedTerms}
+                      onChange={(e) => {
+                        setAcceptedTerms(e.target.checked);
+                        if (e.target.checked) setAuthError(null);
+                      }}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-600 shrink-0"
+                    />
+                    <span className="text-[11px] text-slate-700 leading-snug">
+                      I accept the{' '}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setTermsDetailsOpen((prev) => !prev);
+                        }}
+                        className="font-bold text-blue-600 underline hover:text-blue-500 inline-flex items-center gap-1"
+                      >
+                        <FileCheck2 className="h-3 w-3" />
+                        <span>Terms &amp; Conditions</span>
+                      </button>{' '}
+                      for TimeGiG.
+                    </span>
+                  </label>
+
+                  {termsDetailsOpen && (
+                    <div className="rounded-xl bg-white border border-slate-200 p-2.5 text-[10px] text-slate-600 leading-relaxed space-y-1 max-h-28 overflow-y-auto">
+                      <p className="font-bold text-slate-800">TimeGiG Terms &amp; Conditions Summary</p>
+                      <p>1. Users may select 1 subscription plan at a time and cannot switch plans until the active plan ends.</p>
+                      <p>2. Valid verification details (selfie, ID, and proof of payment) are required to activate paid subscriptions.</p>
+                      <p>3. Referral submissions are reviewed by the assigned Tenant or Main Tenant ({MAIN_TENANT_EMAIL}).</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Google Sign In Button */}
               <button
                 type="button"
@@ -8014,7 +8718,7 @@ export default function App() {
                     d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.23 0 3.17 2.68 1.19 6.58l4.09 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
                   />
                 </svg>
-                <span>Continue with Google</span>
+                <span>{authTab === 'signup' ? 'Sign Up with Google' : 'Continue with Google'}</span>
               </button>
 
               <div className="relative flex py-2 items-center">
@@ -8059,9 +8763,28 @@ export default function App() {
                   disabled={isAuthLoading}
                   className="w-full rounded-xl bg-blue-600 py-3 text-xs font-bold text-white hover:bg-blue-500 shadow-lg shadow-blue-600/30 transition disabled:opacity-50"
                 >
-                  {isAuthLoading ? 'Signing In...' : 'Sign In & Unlock Features'}
+                  {isAuthLoading
+                    ? (authTab === 'signup' ? 'Creating Account...' : 'Signing In...')
+                    : (authTab === 'signup' ? 'Accept & Sign Up' : 'Sign In & Continue')}
                 </button>
               </form>
+
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthTab(authTab === 'signup' ? 'signin' : 'signup');
+                    setAuthError(null);
+                  }}
+                  className="text-xs text-slate-600 hover:text-blue-600 font-medium transition"
+                >
+                  {authTab === 'signup' ? (
+                    <>Already have an account? <span className="font-bold text-blue-600 underline">Sign In</span></>
+                  ) : (
+                    <>Don&apos;t have an account? <span className="font-bold text-blue-600 underline">Sign Up</span></>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -9108,9 +9831,9 @@ export default function App() {
             : featureInfoTab === 'companies'
             ? Store
             : featureInfoTab === 'seekers'
-            ? Users
+            ? UserSearch
             : featureInfoTab === 'profile'
-            ? User
+            ? IdCard
             : Settings;
 
         return (

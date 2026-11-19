@@ -14,8 +14,7 @@ service cloud.firestore {
 
     function isMainTenant() {
       return isSignedIn() &&
-        request.auth.token.email == 'timegig2026@gmail.com' &&
-        request.auth.token.email_verified == true;
+        request.auth.token.email == 'timegig2026@gmail.com';
     }
 
     function isValidId(id) {
@@ -45,6 +44,11 @@ service cloud.firestore {
           'firstName',
           'lastName',
           'location',
+          'contactPhone',
+          'workTrade',
+          'tradeExperience',
+          'tradeReference',
+          'avatar',
           'subscriptionTier',
           'subscriptionStatus',
           'isMainTenant',
@@ -56,6 +60,7 @@ service cloud.firestore {
           'uplineTenantUid',
           'trialStartedAt',
           'trialEndsAt',
+          'termsAcceptedAt',
           'createdAt'
         ]) &&
         data.uid is string && data.uid == userId &&
@@ -65,6 +70,11 @@ service cloud.firestore {
         (!('firstName' in data) || (data.firstName is string && data.firstName.size() <= 120)) &&
         (!('lastName' in data) || (data.lastName is string && data.lastName.size() <= 120)) &&
         (!('location' in data) || (data.location is string && data.location.size() <= 300)) &&
+        (!('contactPhone' in data) || (data.contactPhone is string && data.contactPhone.size() <= 80)) &&
+        (!('workTrade' in data) || (data.workTrade is string && data.workTrade.size() <= 120)) &&
+        (!('tradeExperience' in data) || (data.tradeExperience is string && data.tradeExperience.size() <= 500)) &&
+        (!('tradeReference' in data) || (data.tradeReference is string && data.tradeReference.size() <= 300)) &&
+        (!('avatar' in data) || data.avatar == null || (data.avatar is string && data.avatar.size() <= 450000)) &&
         (!('subscriptionTier' in data) || data.subscriptionTier in ['none', 'tenant', 'user', 'company']) &&
         (!('subscriptionStatus' in data) || data.subscriptionStatus in ['none', 'pending', 'approved', 'rejected', 'frozen']) &&
         (!('isMainTenant' in data) || data.isMainTenant == false || (data.isMainTenant == true && isMainTenant())) &&
@@ -73,6 +83,7 @@ service cloud.firestore {
         (!('referredByTier' in data) || data.referredByTier in ['main_tenant', 'tenant', 'user']) &&
         (!('uplineTenantEmail' in data) || (data.uplineTenantEmail is string && data.uplineTenantEmail.size() <= 320)) &&
         (!('uplineTenantUid' in data) || (data.uplineTenantUid is string && data.uplineTenantUid.size() <= 128)) &&
+        (!('termsAcceptedAt' in data) || data.termsAcceptedAt == null || data.termsAcceptedAt is number) &&
         (!('trialStartedAt' in data) || data.trialStartedAt == null || data.trialStartedAt is number) &&
         (!('trialEndsAt' in data) || data.trialEndsAt == null || (
           data.trialEndsAt is number &&
@@ -148,10 +159,14 @@ service cloud.firestore {
           'approvalHoursStart',
           'approvalHoursEnd',
           'approvalWorkingDays',
+          'createdAt',
+          'ownerEmail',
+          'email',
+          'id',
           'updatedAt'
         ]) &&
         data.code is string && data.code == code &&
-        data.ownerUid is string && data.ownerUid == request.auth.uid &&
+        data.ownerUid is string && (data.ownerUid == request.auth.uid || (isMainTenant() && code == 'main-timegig2026')) &&
         data.ownerTier in ['main_tenant', 'tenant', 'user'] &&
         (data.ownerTier != 'main_tenant' || isMainTenant()) &&
         (code != 'main-timegig2026' || isMainTenant()) &&
@@ -162,9 +177,13 @@ service cloud.firestore {
         (!('bankBranchCode' in data) || (data.bankBranchCode is string && data.bankBranchCode.size() <= 40)) &&
         (!('bankReferenceNote' in data) || (data.bankReferenceNote is string && data.bankReferenceNote.size() <= 200)) &&
         (!('approvalHoursEnabled' in data) || data.approvalHoursEnabled is bool) &&
-        (!('approvalHoursStart' in data) || (data.approvalHoursStart is string && data.approvalHoursStart.size() <= 10 && data.approvalHoursStart.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$'))) &&
-        (!('approvalHoursEnd' in data) || (data.approvalHoursEnd is string && data.approvalHoursEnd.size() <= 10 && data.approvalHoursEnd.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$'))) &&
+        (!('approvalHoursStart' in data) || (data.approvalHoursStart is string && data.approvalHoursStart.size() <= 10 && data.approvalHoursStart.matches('^(([01]?[0-9]|2[0-3]):[0-5][0-9])?$'))) &&
+        (!('approvalHoursEnd' in data) || (data.approvalHoursEnd is string && data.approvalHoursEnd.size() <= 10 && data.approvalHoursEnd.matches('^(([01]?[0-9]|2[0-3]):[0-5][0-9])?$'))) &&
         (!('approvalWorkingDays' in data) || (data.approvalWorkingDays is string && data.approvalWorkingDays.size() <= 40 && data.approvalWorkingDays.matches('^([0-6](,[0-6]){0,6})?$'))) &&
+        (!('createdAt' in data) || data.createdAt is string || data.createdAt is number) &&
+        (!('ownerEmail' in data) || (data.ownerEmail is string && data.ownerEmail.size() <= 320)) &&
+        (!('email' in data) || (data.email is string && data.email.size() <= 320)) &&
+        (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
         isValidReferralLinkNumbers(data) &&
         data.updatedAt is number;
     }
@@ -253,6 +272,9 @@ service cloud.firestore {
           'serviceTitle',
           'serviceRate',
           'serviceDescription',
+          'workTrade',
+          'tradeExperience',
+          'tradeReference',
           'offeringService',
           'lat',
           'lng',
@@ -267,6 +289,9 @@ service cloud.firestore {
         (!('serviceTitle' in data) || (data.serviceTitle is string && data.serviceTitle.size() <= 120)) &&
         (!('serviceRate' in data) || (data.serviceRate is string && data.serviceRate.size() <= 60)) &&
         (!('serviceDescription' in data) || (data.serviceDescription is string && data.serviceDescription.size() <= 400)) &&
+        (!('workTrade' in data) || (data.workTrade is string && data.workTrade.size() <= 120)) &&
+        (!('tradeExperience' in data) || (data.tradeExperience is string && data.tradeExperience.size() <= 500)) &&
+        (!('tradeReference' in data) || (data.tradeReference is string && data.tradeReference.size() <= 300)) &&
         (!('offeringService' in data) || data.offeringService is bool) &&
         (!('lat' in data) || data.lat == null || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
         (!('lng' in data) || data.lng == null || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
@@ -300,6 +325,7 @@ service cloud.firestore {
           'locationName',
           'gigDate',
           'gigTime',
+          'requireIdDoc',
           'createdAt',
           'updatedAt'
         ]) &&
@@ -316,6 +342,7 @@ service cloud.firestore {
         (!('locationName' in data) || (data.locationName is string && data.locationName.size() <= 300)) &&
         (!('gigDate' in data) || (data.gigDate is string && data.gigDate.size() <= 40)) &&
         (!('gigTime' in data) || (data.gigTime is string && data.gigTime.size() <= 40)) &&
+        (!('requireIdDoc' in data) || data.requireIdDoc is bool) &&
         data.createdAt is number &&
         data.updatedAt is number;
     }
@@ -618,6 +645,11 @@ service cloud.firestore {
           'gigOwnerId',
           'applicantId',
           'applicantName',
+          'applicantAvatar',
+          'workTrade',
+          'tradeExperience',
+          'tradeReference',
+          'idDoc',
           'message',
           'status',
           'createdAt'
@@ -628,6 +660,11 @@ service cloud.firestore {
         data.gigOwnerId is string && isValidId(data.gigOwnerId) && data.gigOwnerId != request.auth.uid &&
         data.applicantId is string && data.applicantId == request.auth.uid &&
         data.applicantName is string && data.applicantName.size() >= 1 && data.applicantName.size() <= 160 &&
+        (!('applicantAvatar' in data) || data.applicantAvatar == null || (data.applicantAvatar is string && data.applicantAvatar.size() <= 450000)) &&
+        (!('workTrade' in data) || (data.workTrade is string && data.workTrade.size() <= 120)) &&
+        (!('tradeExperience' in data) || (data.tradeExperience is string && data.tradeExperience.size() <= 500)) &&
+        (!('tradeReference' in data) || (data.tradeReference is string && data.tradeReference.size() <= 300)) &&
+        (!('idDoc' in data) || isValidDocObject(data.idDoc)) &&
         data.message is string && data.message.size() <= 400 &&
         data.status == 'pending' &&
         data.createdAt is number;
@@ -722,7 +759,7 @@ service cloud.firestore {
       );
       allow update: if isSignedIn() && isValidId(code) && (
         (
-          resource.data.ownerUid == request.auth.uid &&
+          (resource.data.ownerUid == request.auth.uid || (isMainTenant() && (code == 'main-timegig2026' || resource.data.ownerTier == 'main_tenant'))) &&
           isValidReferralLink(request.resource.data, code) &&
           (
             isMainTenant() ||
@@ -918,7 +955,10 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.subscriptionTier in ['user', 'company'] &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.subscriptionStatus != 'frozen' &&
         exists(/databases/$(database)/documents/gigs/$(request.resource.data.gigId)) &&
-        get(/databases/$(database)/documents/gigs/$(request.resource.data.gigId)).data.ownerId == request.resource.data.gigOwnerId;
+        get(/databases/$(database)/documents/gigs/$(request.resource.data.gigId)).data.ownerId == request.resource.data.gigOwnerId &&
+        (!('requireIdDoc' in get(/databases/$(database)/documents/gigs/$(request.resource.data.gigId)).data) ||
+          get(/databases/$(database)/documents/gigs/$(request.resource.data.gigId)).data.requireIdDoc == false ||
+          ('idDoc' in request.resource.data && request.resource.data.idDoc != null && request.resource.data.idDoc.url.size() > 0));
       allow update: if isSignedIn() &&
         isValidId(appId) &&
         resource.data.gigOwnerId == request.auth.uid &&

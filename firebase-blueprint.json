@@ -10,6 +10,11 @@
         "firstName": { "type": "string", "description": "First name" },
         "lastName": { "type": "string", "description": "Last name" },
         "location": { "type": "string", "description": "User location" },
+        "contactPhone": { "type": "string", "description": "User contact phone or WhatsApp information" },
+        "workTrade": { "type": "string", "description": "Primary work trade or casual gig category" },
+        "tradeExperience": { "type": "string", "description": "At least one work experience supporting the user's trade" },
+        "tradeReference": { "type": "string", "description": "At least one verifiable reference supporting the user's trade" },
+        "avatar": { "type": ["string", "null"], "description": "Compressed user face selfie avatar data URL" },
         "subscriptionTier": { "type": "string", "enum": ["none", "tenant", "user", "company"], "description": "Selected subscription tier" },
         "subscriptionStatus": { "type": "string", "enum": ["none", "pending", "approved", "rejected", "frozen"], "description": "Subscription approval status" },
         "isMainTenant": { "type": "boolean", "description": "True only for timegig2026@gmail.com" },
@@ -21,6 +26,7 @@
         "uplineTenantUid": { "type": "string", "description": "UID of the direct referral tenant when referred by a referral tenant" },
         "trialStartedAt": { "type": "number", "description": "Epoch timestamp when referral free trial was activated" },
         "trialEndsAt": { "type": "number", "description": "Epoch timestamp when referral free trial expires" },
+        "termsAcceptedAt": { "type": "number", "description": "Epoch timestamp when user accepted Terms and Conditions on signup" },
         "createdAt": { "type": "string", "description": "Creation timestamp" }
       },
       "required": ["uid", "email", "referralCode", "createdAt"]
@@ -54,6 +60,10 @@
         "approvalHoursStart": { "type": "string", "description": "Working hours start time in 24h HH:MM format" },
         "approvalHoursEnd": { "type": "string", "description": "Working hours end time in 24h HH:MM format" },
         "approvalWorkingDays": { "type": "string", "description": "Comma-separated weekday indices (0=Sun..6=Sat) when tenant approves submissions" },
+        "createdAt": { "type": ["string", "number"], "description": "Creation timestamp" },
+        "ownerEmail": { "type": "string", "description": "Link owner email address" },
+        "email": { "type": "string", "description": "Link owner email address" },
+        "id": { "type": "string", "description": "Unique link code or ID" },
         "updatedAt": { "type": "number", "description": "Last update epoch timestamp" }
       },
       "required": ["code", "ownerUid", "ownerTier", "updatedAt"]
@@ -98,6 +108,9 @@
         "serviceTitle": { "type": "string", "description": "Service offered by the seeker for hire" },
         "serviceRate": { "type": "string", "description": "Service rate or fee label" },
         "serviceDescription": { "type": "string", "description": "Brief description of the offered service" },
+        "workTrade": { "type": "string", "description": "Seeker's primary work trade" },
+        "tradeExperience": { "type": "string", "description": "Work experience supporting the trade" },
+        "tradeReference": { "type": "string", "description": "Reference supporting the trade" },
         "offeringService": { "type": "boolean", "description": "Whether the seeker is currently offering services for hire" },
         "lat": { "type": ["number", "null"], "description": "Seeker latitude" },
         "lng": { "type": ["number", "null"], "description": "Seeker longitude" },
@@ -123,6 +136,7 @@
         "locationName": { "type": "string", "description": "Human-readable address or coordinates label" },
         "gigDate": { "type": "string", "description": "Scheduled gig date (YYYY-MM-DD)" },
         "gigTime": { "type": "string", "description": "Scheduled gig time (HH:MM)" },
+        "requireIdDoc": { "type": "boolean", "description": "Whether the gig owner requires applicants to submit an ID document" },
         "createdAt": { "type": "number", "description": "Creation epoch timestamp" },
         "updatedAt": { "type": "number", "description": "Last update epoch timestamp" }
       },
@@ -209,6 +223,11 @@
         "gigOwnerId": { "type": "string", "description": "UID of the gig post owner" },
         "applicantId": { "type": "string", "description": "UID of the applicant user (cannot be a tenant)" },
         "applicantName": { "type": "string", "description": "Display name of the applicant" },
+        "applicantAvatar": { "type": ["string", "null"], "description": "Optional face selfie thumbnail of applicant" },
+        "workTrade": { "type": "string", "description": "Applicant work trade" },
+        "tradeExperience": { "type": "string", "description": "Applicant experience supporting their trade" },
+        "tradeReference": { "type": "string", "description": "Applicant reference supporting their trade" },
+        "idDoc": { "type": ["object", "null"], "description": "Optional ID document submitted by applicant when required by gig owner" },
         "message": { "type": "string", "description": "Application note from the user" },
         "status": { "type": "string", "enum": ["pending", "accepted", "rejected"], "description": "Application decision status" },
         "createdAt": { "type": "number", "description": "Creation epoch timestamp" }
